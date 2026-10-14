@@ -29,6 +29,7 @@
 #include <chrono>
 #include <optional>
 #include "SliceModel.h"
+#include "ClientTransverter.h"
 #include "MeterModel.h"
 #include "PanadapterModel.h"
 #include "ProfileLoadPanWriteQueue.h"
@@ -2184,8 +2185,30 @@ public:
     };
     const QMap<int, XvtrInfo>& xvtrList() const { return m_xvtrList; }
 
+    // Client-side transverters for a backend whose radio holds none (not a
+    // Flex). RadioModel translates RF<->IF at the backend seam, so every model
+    // and consumer above it (VFO, pan, spots, TCI, rigctl, logging) sees RF.
+    bool usesClientTransverters() const { return m_backend && !m_flexBackend; }
+    const ClientTransverterSet& clientTransverters() const { return m_clientXvtrs; }
+    void setClientTransverters(const QVector<ClientTransverter>& list);
+    // The frequency a slice transmits on. Equal to its frequency, except under a
+    // client transverter with its own TX LO (QO-100: RX 10489.540 transmits on
+    // 2400.040), which TCI tx_frequency and logging must report.
+    double transmitFrequencyMhz(const SliceModel* slice) const;
+    // Seam entry points for the headless control plane, which tunes a slice or
+    // pan without a SliceModel intent. They carry the same RF->IF translation
+    // as the desktop path; calling the backend directly would send RF raw.
+    void requestBackendSliceTune(int sliceId, const SliceTuneRequest& request);
+    void requestBackendPanCenter(const QString& backendPanId, double hz,
+                                 IRadioBackend::PanCenterIntent intent);
+
 private:
     QMap<int, XvtrInfo> m_xvtrList;
+    ClientTransverterSet m_clientXvtrs;
+    void loadClientTransverters();
+    void saveClientTransverters();
+    void noteClientTransverterActivation(int previousIndex);
+    double clientTransverterRadioMhz(double requestedMhz);
 
     // Backward-compat helpers for active panadapter (Phase 1)
     QString activeWfId() const {

@@ -183,6 +183,7 @@ private:
     QWidget* buildAudioTab();
     QWidget* buildFiltersTab();
     QWidget* buildXvtrTab();
+    QWidget* buildClientXvtrTab();
     QWidget* buildAntennaNamesTab();
     QWidget* buildApdTab();
     void     refreshApdSamplerCombo(const QString& txAnt);

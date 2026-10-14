@@ -4686,6 +4686,15 @@ add_executable(xvtr_policy_test
 target_include_directories(xvtr_policy_test PRIVATE src)
 target_link_libraries(xvtr_policy_test PRIVATE Qt6::Core)
 
+# Client-side transverter RF<->IF translation for non-Flex backends
+add_executable(client_transverter_test
+    tests/client_transverter_test.cpp
+    src/models/ClientTransverter.cpp
+)
+target_include_directories(client_transverter_test PRIVATE src)
+target_link_libraries(client_transverter_test PRIVATE Qt6::Core)
+add_test(NAME client_transverter_test COMMAND client_transverter_test)
+
 # #3449 — VITA-49 waterfall tile frequency decode (no 1 GHz ceiling)
 add_executable(vita_tile_frequency_test
     tests/vita_tile_frequency_test.cpp

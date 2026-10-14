@@ -666,6 +666,7 @@ void RadioModel::handRestoredStateToBackend()
         return;
     }
     m_backend->configureSettingsScope(settingsScope(), m_lastInfo.serialIdentity);
+    loadClientTransverters();
     m_clientStepHz = 0;   // never carry radio A's step onto radio B
     const RadioCapabilities caps = m_backend->capabilities();
     if (!RadioStateMemory::shouldEngage(caps)) {
@@ -1516,6 +1517,9 @@ void RadioModel::wireBackendReceiverState()
         if (generation != m_backendReceiverGeneration) {
             return;
         }
+        if (usesClientTransverters()) {
+            centerMhz = m_clientXvtrs.shiftToDisplayMhz(centerMhz);
+        }
         // aetherd Gap B (Step 2c): remember the geometry even when no
         // PanadapterModel resolves — an HL2 session has none, and the neutral
         // waterfall rows below still need the band edges.
@@ -1601,6 +1605,11 @@ void RadioModel::wireBackendReceiverState()
         // with its own RadioConnection already uses model keys ("0x40000000"), and every
         // slice-to-pane association keys off that equality (#4671).
         SliceDelta mapped = delta;
+        if (usesClientTransverters() && mapped.frequency) {
+            const int before = m_clientXvtrs.activeIndex();
+            mapped.frequency = m_clientXvtrs.toDisplayMhz(*mapped.frequency);
+            noteClientTransverterActivation(before);
+        }
         if (!m_flexBackend && !m_connection && mapped.panId) {
             // Through the SAME allocator the geometry handler uses, so a slice
             // lands on the pane its own receiver feeds. Pinned to index 0 while
@@ -3990,7 +3999,137 @@ void RadioModel::rebootRadio()
 
 RadioCapabilities RadioModel::backendCapabilities() const
 {
-    return m_backend ? m_backend->capabilities() : RadioCapabilities{};
+    if (!m_backend) {
+        return RadioCapabilities{};
+    }
+    RadioCapabilities caps = m_backend->capabilities();
+    if (!usesClientTransverters()) {
+        return caps;
+    }
+    // A client transverter's RF window is tunable through the IF the radio
+    // covers: declare it as a band, widen the tuning range to reach it, and
+    // give it the IF's power ceiling. Every range check above the seam reads
+    // these, so a typed 10489.540 or a QO-100 band button is admitted.
+    for (const ClientTransverter& t : m_clientXvtrs.transverters()) {
+        if (!t.isUsable()) {
+            continue;
+        }
+        const double lowHz = t.rfLowMhz() * 1.0e6;
+        const double highHz = t.rfHighMhz() * 1.0e6;
+        caps.declaredBandRanges.append(DeclaredBandRange{t.name, lowHz, highHz});
+        caps.tuningMaxHz = std::max(caps.tuningMaxHz, highHz);
+        caps.sliceFrequencyControl.maximumHz =
+            std::max(caps.sliceFrequencyControl.maximumHz, static_cast<qint64>(highHz));
+        caps.txPowerBands.append(TxPowerBand{
+            lowHz, highHz, t.rxOnly ? 0.0 : caps.txPowerMaxWattsAt(t.ifLowMhz * 1.0e6)});
+    }
+    if (const ClientTransverter* active = m_clientXvtrs.active(); active && active->rxOnly) {
+        caps.canTransmit = false;
+    }
+    return caps;
+}
+
+void RadioModel::setClientTransverters(const QVector<ClientTransverter>& list)
+{
+    m_clientXvtrs.setTransverters(list);
+    saveClientTransverters();
+    publishCapabilities(isConnected());
+    emit infoChanged();
+}
+
+void RadioModel::loadClientTransverters()
+{
+    m_clientXvtrs = ClientTransverterSet{};
+    if (!usesClientTransverters()) {
+        return;
+    }
+    const QJsonObject doc = settingsScope().feature(QStringLiteral("ClientTransverters"));
+    QVector<ClientTransverter> list;
+    for (const QJsonValue& v : doc.value(QStringLiteral("transverters")).toArray()) {
+        list.append(ClientTransverter::fromJson(v.toObject()));
+    }
+    m_clientXvtrs.setTransverters(list);
+    m_clientXvtrs.setActiveIndex(doc.value(QStringLiteral("active")).toInt(-1));
+    qCDebug(lcProtocol) << "RadioModel: client transverters loaded" << list.size()
+                        << "active" << m_clientXvtrs.activeIndex();
+}
+
+void RadioModel::saveClientTransverters()
+{
+    if (!usesClientTransverters()) {
+        return;
+    }
+    QJsonArray arr;
+    for (const ClientTransverter& t : m_clientXvtrs.transverters()) {
+        arr.append(t.toJson());
+    }
+    settingsScope().setFeature(QStringLiteral("ClientTransverters"), 1,
+                               QJsonObject{{QStringLiteral("transverters"), arr},
+                                           {QStringLiteral("active"),
+                                            m_clientXvtrs.activeIndex()}});
+}
+
+double RadioModel::clientTransverterRadioMhz(double requestedMhz)
+{
+    // The radio's own range, read at each tune: at the connect edge, where the
+    // list loads, a backend may not have identified the model yet and reports
+    // 0/0, which would turn the band-edge hold into a raw pass-through.
+    const RadioCapabilities native = m_backend->capabilities();
+    m_clientXvtrs.setNativeRangeMhz(native.tuningMinHz / 1.0e6, native.tuningMaxHz / 1.0e6);
+    const int before = m_clientXvtrs.activeIndex();
+    const double radioMhz = m_clientXvtrs.toRadioMhz(requestedMhz);
+    if (const ClientTransverter* t = m_clientXvtrs.active();
+        t && (requestedMhz < t->rfLowMhz() || requestedMhz > t->rfHighMhz())) {
+        qCDebug(lcProtocol).noquote()
+            << QStringLiteral("RadioModel: %1 tune %2 MHz held at band edge, IF %3 MHz")
+                   .arg(t->name).arg(requestedMhz, 0, 'f', 6).arg(radioMhz, 0, 'f', 6);
+    }
+    noteClientTransverterActivation(before);
+    return radioMhz;
+}
+
+double RadioModel::transmitFrequencyMhz(const SliceModel* slice) const
+{
+    if (!slice) {
+        return 0.0;
+    }
+    const ClientTransverter* t = usesClientTransverters() ? m_clientXvtrs.active() : nullptr;
+    return t ? slice->frequency() - t->rxLoMhz + t->txLo() : slice->frequency();
+}
+
+void RadioModel::requestBackendSliceTune(int sliceId, const SliceTuneRequest& request)
+{
+    if (!m_backend) {
+        return;
+    }
+    SliceTuneRequest radio = request;
+    if (usesClientTransverters()) {
+        radio.frequencyHz = clientTransverterRadioMhz(request.frequencyHz / 1.0e6) * 1.0e6;
+    }
+    m_backend->requestSliceTune(sliceId, radio);
+}
+
+void RadioModel::requestBackendPanCenter(const QString& backendPanId, double hz,
+                                         IRadioBackend::PanCenterIntent intent)
+{
+    if (!m_backend) {
+        return;
+    }
+    m_backend->setPanCenter(backendPanId, m_clientXvtrs.shiftToRadioMhz(hz / 1.0e6) * 1.0e6,
+                            intent);
+}
+
+void RadioModel::noteClientTransverterActivation(int previousIndex)
+{
+    if (m_clientXvtrs.activeIndex() == previousIndex) {
+        return;
+    }
+    const ClientTransverter* active = m_clientXvtrs.active();
+    qCDebug(lcProtocol) << "RadioModel: client transverter"
+                        << (active ? active->name : QStringLiteral("none")) << "active";
+    saveClientTransverters();
+    // RX-only and the band power ceiling follow the active transverter.
+    publishCapabilities(isConnected());
 }
 
 // None of these writes wire text: the Flex caller keeps its own send.
@@ -4509,6 +4648,12 @@ bool RadioModel::refuseKeyOnTransmitIncapableBackend()
     if (backendCapabilities().canTransmit)
         return true;
 
+    if (const ClientTransverter* t = m_clientXvtrs.active(); t && t->rxOnly) {
+        return refuseKeyWithInterlock(
+            tr("The %1 transverter is receive-only.").arg(t->name),
+            QStringLiteral("xvtr-rx-only:%1").arg(t->name));
+    }
+
     return refuseKeyWithInterlock(
         tr("This radio is receive-only and cannot transmit."),
         QStringLiteral("rx-only-tx"));
@@ -4552,15 +4697,21 @@ void RadioModel::applyBackendTransmitDelta(const TransmitDelta& delta)
     const quint64 atuEpoch = m_atuCommandEpoch;
     // Backend MOX is radio state, not local intent; don't echo it into the
     // signal that drives this client's audio, DAX, recorder and serial PTT.
-    if (delta.mox) {
+    TransmitDelta translated;
+    if (usesClientTransverters() && delta.transmitFreq) {
+        translated = delta;
+        translated.transmitFreq = m_clientXvtrs.toDisplayTxMhz(*delta.transmitFreq);
+    }
+    const TransmitDelta& d = translated.transmitFreq ? translated : delta;
+    if (d.mox) {
         // Remembered only for a backend whose mox also carries the radio's own
         // keying, so a host unkey cannot clear a PTT the radio still reports.
-        m_backendObservedTransmit = *delta.mox && m_backend
+        m_backendObservedTransmit = *d.mox && m_backend
             && m_backend->capabilities().radioPttObservation.has_value();
-        publishBackendTransmitEdge(*delta.mox);
+        publishBackendTransmitEdge(*d.mox);
     }
-    m_transmitModel.applyChanges(delta);
-    if (delta.atuStatusRaw && operation.sameOperation(m_txOperation)
+    m_transmitModel.applyChanges(d);
+    if (d.atuStatusRaw && operation.sameOperation(m_txOperation)
         && atuEpoch == m_atuCommandEpoch
         && atuIntent.pending()) {
         const ATUStatus status = m_transmitModel.atuStatus();
@@ -5795,7 +5946,15 @@ bool RadioModel::requestConfirmedReceiveTune(int sliceId, double mhz, IRadioBack
     const auto* receiver = slice(sliceId);
     if (!receiver || receiver->isLocked() || !sliceMayBelongToUs(sliceId)
         || !receiveControlPanId(receiver->panId())) { return false; }
-    const auto control = backendCapabilities().sliceFrequencyControl;
+    // A client transverter translates FIRST and the radio's own range judges
+    // the IF, so a wheel step past either edge of the RF window is held at the
+    // edge by the translator instead of refused here against the RF bounds.
+    if (usesClientTransverters()) {
+        mhz = clientTransverterRadioMhz(mhz);
+    }
+    const auto control = usesClientTransverters()
+        ? m_backend->capabilities().sliceFrequencyControl
+        : backendCapabilities().sliceFrequencyControl;
     if (control.authority == SliceFrequencyControl::Authority::Unknown
         || mhz * 1e6 < control.minimumHz || mhz * 1e6 > control.maximumHz) { return false; }
     return m_backend->requestReceiveTune(sliceId, mhz * 1e6, view);
@@ -6288,7 +6447,8 @@ bool RadioModel::dispatchPanCenterBandwidth(const QString& panId,
             // the edge) — so on a backend where Drag means retune, clicking a
             // signal near the pan edge tuned the radio most of a half-span past
             // it. See IRadioBackend::PanCenterIntent and requestPanCenter().
-            m_backend->setPanCenter(backendPanIdFor(panId), centerMhz * 1.0e6,
+            m_backend->setPanCenter(backendPanIdFor(panId),
+                                    m_clientXvtrs.shiftToRadioMhz(centerMhz) * 1.0e6,
                                     intent);
         }
         // Bandwidth goes through the seam for the same reason center does. This
@@ -9890,6 +10050,12 @@ SliceModel* RadioModel::receiveCommandSource() const
 void RadioModel::dispatchSliceTune(const SliceTuneRequest& request)
 {
     if (SliceModel* source = receiveCommandSource()) {
+        if (usesClientTransverters()) {
+            SliceTuneRequest radio = request;
+            radio.frequencyHz = clientTransverterRadioMhz(request.frequencyHz / 1.0e6) * 1.0e6;
+            m_backend->requestSliceTune(source->sliceId(), radio);
+            return;
+        }
         m_backend->requestSliceTune(source->sliceId(), request);
     }
 }
