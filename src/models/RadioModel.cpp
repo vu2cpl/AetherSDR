@@ -3293,7 +3293,9 @@ QString RadioModel::txFilterFrequencyLimitMessage(int lowHz, int highHz) const
     if (!s)
         return QString();
 
-    const double carrierMhz = s->frequency();
+    // The transmit RF, which a split-LO client transverter moves off the slice
+    // frequency (QO-100: judged on 13cm at 2400.040, not 3cm at 10489.540).
+    const double carrierMhz = transmitFrequencyMhz(s);
     if (carrierMhz <= 0.0)
         return QString();
 
@@ -4020,11 +4022,14 @@ RadioCapabilities RadioModel::backendCapabilities() const
         caps.tuningMaxHz = std::max(caps.tuningMaxHz, highHz);
         caps.sliceFrequencyControl.maximumHz =
             std::max(caps.sliceFrequencyControl.maximumHz, static_cast<qint64>(highHz));
-        caps.txPowerBands.append(TxPowerBand{
-            lowHz, highHz, t.rxOnly ? 0.0 : caps.txPowerMaxWattsAt(t.ifLowMhz * 1.0e6)});
-    }
-    if (const ClientTransverter* active = m_clientXvtrs.active(); active && active->rxOnly) {
-        caps.canTransmit = false;
+        // The power ceiling is looked up at the TRANSMIT RF (IF + TX LO), and
+        // is the IF band's own rating: the radio's output is what drives the
+        // transverter, so no new number is invented here.
+        if (!t.rxOnly) {
+            caps.txPowerBands.append(TxPowerBand{
+                (t.ifLowMhz + t.txLo()) * 1.0e6, (t.ifHighMhz + t.txLo()) * 1.0e6,
+                caps.txPowerMaxWattsAt(t.ifLowMhz * 1.0e6)});
+        }
     }
     return caps;
 }
@@ -4502,7 +4507,9 @@ void RadioModel::refreshTxPowerLimit()
         return;
     }
 
-    const double frequencyHz = tx->frequency() * 1.0e6;
+    // Transmit RF, not the slice: under a split-LO client transverter the
+    // ceiling belongs to the uplink window (see backendCapabilities()).
+    const double frequencyHz = transmitFrequencyMhz(tx) * 1.0e6;
     // The common drag-rate path remains entirely below the capability lookup
     // and TransmitModel setter while the TX VFO stays inside the same RF deck.
     if (frequencyHz >= m_activeTxPowerBandLowHz
@@ -4648,12 +4655,6 @@ bool RadioModel::refuseKeyOnTransmitIncapableBackend()
     if (backendCapabilities().canTransmit)
         return true;
 
-    if (const ClientTransverter* t = m_clientXvtrs.active(); t && t->rxOnly) {
-        return refuseKeyWithInterlock(
-            tr("The %1 transverter is receive-only.").arg(t->name),
-            QStringLiteral("xvtr-rx-only:%1").arg(t->name));
-    }
-
     return refuseKeyWithInterlock(
         tr("This radio is receive-only and cannot transmit."),
         QStringLiteral("rx-only-tx"));
@@ -4666,6 +4667,16 @@ bool RadioModel::refuseKeyOnTransmitIncapableBackend()
 // modes (every backend but Icom).
 bool RadioModel::refuseKeyInReceiveOnlyMode()
 {
+    // An RX-only client transverter. Covers client-originated key-on only
+    // (MOX, TUNE, ATU, CW, CWX through beginTxActivity()); the radio's own PTT,
+    // VOX and front-panel key cannot be intercepted on a networked Icom.
+    if (const ClientTransverter* t = usesClientTransverters() ? m_clientXvtrs.active() : nullptr;
+        t && t->rxOnly) {
+        return refuseKeyWithInterlock(
+            tr("The %1 transverter is receive-only.").arg(t->name),
+            QStringLiteral("xvtr-rx-only:%1").arg(t->name));
+    }
+
     SliceModel* s = txSlice();
     const QString mode = s ? s->mode() : QString();
     if (!AetherSDR::modeIsReceiveOnly(backendCapabilities(), mode))
