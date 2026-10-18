@@ -240,6 +240,8 @@ int main(int argc, char** argv)
         check(caps.hasAgcThreshold && caps.hasAmCarrierLevel && caps.voxControl
                   && caps.voxControl->hasDelay,
               "Flex retains AGC threshold, AM carrier, and VOX delay");
+        check(caps.txMonitorControl && !caps.txMonitorControl->clientAppliesLevel,
+              "Flex's monitor level is the radio's own; no client-side gain");
         check(caps.txMonitorControl && caps.speechProcessorControl
                   && caps.speechProcessorControl->levelMaximum == 2
                   && caps.speechProcessorControl->label == QStringLiteral("PROC"),
@@ -300,6 +302,8 @@ int main(int argc, char** argv)
             check(!caps.hasAgcThreshold && !caps.hasAmCarrierLevel && caps.voxControl
                       && !caps.voxControl->hasDelay,
                   "IC-7300MK2 declares unimplemented controls unavailable");
+            check(caps.txMonitorControl && caps.txMonitorControl->clientAppliesLevel,
+                  "IC-7300MK2 asks the client to apply the monitor level locally");
             check(caps.txMonitorControl && caps.speechProcessorControl
                       && caps.speechProcessorControl->levelMaximum == 10
                       && caps.speechProcessorControl->label == QStringLiteral("COMP"),

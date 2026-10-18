@@ -1046,6 +1046,12 @@ void MainWindow::wireRadioModel()
     // set its visibility.
     connect(&m_radioModel, &RadioModel::capabilitiesChanged,
             this, &MainWindow::applyCapabilitiesToUi);
+    // Client-side monitor level (networked Icom): follows both the backend's
+    // declaration and the MON button / level slider.
+    connect(&m_radioModel, &RadioModel::capabilitiesChanged,
+            this, &MainWindow::syncClientMonitorLevel);
+    connect(&m_radioModel.transmitModel(), &TransmitModel::micStateChanged,
+            this, &MainWindow::syncClientMonitorLevel);
     // Icom's connected edge precedes its verified CI-V model identity. Re-run
     // only when the canonical capability picture changes so the family-wide
     // experimental treatment can settle model-specifically without exposing a
@@ -3200,6 +3206,17 @@ void MainWindow::setAutomationReadOnly(bool readOnly)
     // immediately — no restart needed to arm or lift the gate.
     if (m_automation)
         m_automation->setReadOnly(readOnly);
+}
+
+void MainWindow::syncClientMonitorLevel()
+{
+    if (!m_audio)
+        return;
+    const RadioCapabilities caps = m_radioModel.backendCapabilities();
+    const auto& tx = m_radioModel.transmitModel();
+    const bool active = m_radioModel.isConnected() && caps.txMonitorControl
+        && caps.txMonitorControl->clientAppliesLevel && tx.sbMonitor();
+    m_audio->setClientMonitorLevel(active, tx.monGainSb());
 }
 
 void MainWindow::applyTxAudioCapabilities(bool connected, const RadioCapabilities& caps)

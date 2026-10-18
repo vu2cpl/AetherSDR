@@ -480,6 +480,9 @@ private:
     // `!connected || caps.x`.
     void applyCapabilitiesToUi(bool connected, const RadioCapabilities& caps);
     void applyTxAudioCapabilities(bool connected, const RadioCapabilities& caps);
+    // Pushes MON + monitor level to AudioEngine's client-side monitor gain when
+    // the backend declares TxMonitorControl::clientAppliesLevel; off otherwise.
+    void syncClientMonitorLevel();
     void wireStatusBarMessages();
 
     // Push radio-side-DSP availability into one overlay menu's WNB row. Separate

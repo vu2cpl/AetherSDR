@@ -765,7 +765,12 @@ struct RadioCapabilities {
         bool hasDelay = false;
     };
     std::optional<VoxControl> voxControl;
-    struct TxMonitorControl {};
+    // clientAppliesLevel: the radio's monitor LEVEL reaches only its own
+    // speaker, not the audio it streams to us, so the client scales its local
+    // playback by the level while transmitting with MON on (networked Icom).
+    struct TxMonitorControl {
+        bool clientAppliesLevel = false;
+    };
     std::optional<TxMonitorControl> txMonitorControl;
     // The radio's own line-out mixer (Flex by its command plane; otherwise
     // IRadioBackend::setLineoutGain / setLineoutMute must apply it). Absent: the

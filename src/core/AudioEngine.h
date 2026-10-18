@@ -166,6 +166,15 @@ public:
     // (which taps post-trim) reads what hits the speakers.  Mirrors
     // ClientFinalLimiter::outputTrimDb on the TX side.
     void  setRxOutputTrimDb(float db) { m_rxOutputTrimDb.store(db); }
+    // Client-side TX monitor level for radios whose monitor level does not
+    // reach the streamed audio (TxMonitorControl::clientAppliesLevel). While
+    // the radio transmits and `active`, main RX playback is scaled by the
+    // squared level, so 50 % is about -12 dB and 0 % is silent.
+    void  setClientMonitorLevel(bool active, int levelPercent) {
+        const float l = qBound(0, levelPercent, 100) / 100.0f;
+        m_clientMonitorGain.store(l * l);
+        m_clientMonitorActive.store(active);
+    }
     float rxOutputTrimDb() const { return m_rxOutputTrimDb.load(); }
 
     // Total of the RX chain gains that are one number regardless of what the
@@ -1208,6 +1217,8 @@ private:
     QAudioDevice m_inputDevice;
     std::atomic<float> m_rxVolume{1.0f};
     std::atomic<bool>  m_rxBoost{false};  // 50% software gain boost (#1445)
+    std::atomic<bool>  m_clientMonitorActive{false};
+    std::atomic<float> m_clientMonitorGain{1.0f};
     std::atomic<float> m_rxOutputTrimDb{0.0f};  // ±12 dB linear trim, post-boost
     std::atomic<int>   m_rxPan{50};       // 0=left, 50=centre, 100=right (#1460)
     std::atomic<int>   m_rxBufferCapMs{100}; // RX buffer cap in ms (#1505; default lowered 200->100 for #3193)

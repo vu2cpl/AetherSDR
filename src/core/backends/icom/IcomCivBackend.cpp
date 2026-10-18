@@ -542,8 +542,10 @@ RadioCapabilities IcomCivBackend::capabilities() const
     c.voxControl = m.hasTransmit
         ? std::optional(RadioCapabilities::VoxControl{/*hasDelay*/ false})
         : std::nullopt;
+    // 14 15 sets the level the radio's own speaker hears; the monitor audio in
+    // the network RX stream ignores it, so the client applies the level too.
     c.txMonitorControl = m.hasTransmit
-        ? std::optional(RadioCapabilities::TxMonitorControl{})
+        ? std::optional(RadioCapabilities::TxMonitorControl{/*clientAppliesLevel*/ true})
         : std::nullopt;
     c.lineoutControl = std::nullopt;
     // No client owner is declared for "Show TX in Waterfall" on an Icom.
