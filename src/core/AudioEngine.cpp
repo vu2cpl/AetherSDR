@@ -5748,6 +5748,19 @@ void AudioEngine::processMixedRxAudioData(const QByteArray& pcm,
             for (int i = 0; i < nSamples; ++i) dst[i] = src[i] * gain;
             output = &trimmed;
         }
+        // During TX the main stream is the radio's monitor audio; apply the
+        // operator's monitor level where the radio itself does not.
+        QByteArray monitored;
+        if (source == RxDspSource::Main && !externalSource && bypassRxChainForTx
+            && m_clientMonitorActive.load()) {
+            const float gain = m_clientMonitorGain.load();
+            monitored.resize(output->size());
+            const auto* src = reinterpret_cast<const float*>(output->constData());
+            auto* dst = reinterpret_cast<float*>(monitored.data());
+            const int nSamples = output->size() / static_cast<int>(sizeof(float));
+            for (int i = 0; i < nSamples; ++i) dst[i] = src[i] * gain;
+            output = &monitored;
+        }
         QByteArray panned;
         if (applyOutputPan && sourcePan() != 50) {
             panned = *output;
