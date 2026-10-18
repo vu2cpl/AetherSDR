@@ -77,6 +77,17 @@ RadioHealthDialog::RadioHealthDialog(RadioModel* model, QWidget* parent)
     ThemeManager::instance().applyStyleSheet(m_statusLabel,
         "QLabel { color: {{color.text.secondary}}; font-size: 11px; }");
     buttonRow->addWidget(m_statusLabel, 1);
+    m_dataModBtn = new QPushButton;
+    m_dataModBtn->setAutoDefault(false);
+    m_dataModBtn->setVisible(false);
+    m_dataModBtn->setToolTip(tr("Set the radio's DATA MOD input to its network "
+                                "source, so digital-mode audio from this computer "
+                                "is transmitted. Changes DATA MOD only."));
+    connect(m_dataModBtn, &QPushButton::clicked, this, [this] {
+        if (m_model)
+            m_model->setDataModToNetwork();
+    });
+    buttonRow->addWidget(m_dataModBtn);
     auto* copyBtn = new QPushButton(tr("Copy"));
     copyBtn->setAutoDefault(false);
     connect(copyBtn, &QPushButton::clicked, this, &RadioHealthDialog::copyToClipboard);
@@ -122,6 +133,17 @@ void RadioHealthDialog::refresh()
             ? mergeHealthSnapshots(m_model->offlineHealthRows(),
                                    m_model->backendHealthSnapshot())
             : m_model->backendHealthSnapshot();
+
+    if (const auto it = snap.values.constFind(QStringLiteral("datamod.isNetwork"));
+        it != snap.values.constEnd()) {
+        const QString source =
+            snap.values.value(QStringLiteral("datamod.networkLabel"), QStringLiteral("LAN")).toString();
+        m_dataModBtn->setText(tr("Set DATA MOD to %1").arg(source));
+        m_dataModBtn->setEnabled(!it.value().toBool());
+        m_dataModBtn->setVisible(true);
+    } else {
+        m_dataModBtn->setVisible(false);
+    }
 
     if (snap.isEmpty()) {
         m_table->setRowCount(0);

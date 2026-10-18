@@ -1637,6 +1637,7 @@ void IcomCivBackend::checkModInput()
     };
 
     QStringList wrong;
+    QStringList remedies;
     // ONLY THE "ON" DIRECTION IS THE CLIENT'S BUSINESS. PC Audio on and
     // DATA OFF MOD somewhere else is a real fault: the radio keys and puts no
     // modulation on the air. PC Audio OFF makes no claim at all — the operator
@@ -1647,11 +1648,15 @@ void IcomCivBackend::checkModInput()
         && m_dataOffModInput != mod->networkOnlyValue) {
         wrong << QStringLiteral("PC Audio is on but DATA OFF MOD is %1")
                      .arg(name(m_dataOffModInput));
+        remedies << QStringLiteral("toggle PC Audio off and on to select it");
     }
     if (m_dataMode && m_dataModInput >= 0
         && m_dataModInput != mod->networkOnlyValue) {
         wrong << QStringLiteral("DATA MOD is %1, so generated digital audio is ignored")
                      .arg(name(m_dataModInput));
+        // PC Audio switches DATA OFF MOD only, so it cannot fix this (#6474).
+        remedies << QStringLiteral("click Set DATA MOD to %1 in Radio Health")
+                        .arg(name(mod->networkOnlyValue));
     }
     if (wrong.isEmpty()) {
         m_lastModInputWarning.clear();
@@ -1664,11 +1669,10 @@ void IcomCivBackend::checkModInput()
     // advisory describes a fault and leaves them to guess that the button they
     // already have is what corrects it.
     const QString warning =
-        QStringLiteral("Icom modulation input: %1. Toggle PC Audio off and on to "
-                       "select it, or set it on the radio's front panel "
-                       "(MENU > SET > Connectors > MOD Input). Check Radio Health "
-                       "for the reported source and level.")
-            .arg(wrong.join(QStringLiteral(", ")));
+        QStringLiteral("Icom modulation input: %1. To fix, %2, or set it on the "
+                       "radio's front panel (MENU > SET > Connectors > MOD Input). "
+                       "Check Radio Health for the reported source and level.")
+            .arg(wrong.join(QStringLiteral(", ")), remedies.join(QStringLiteral("; ")));
     if (warning != m_lastModInputWarning) {
         m_lastModInputWarning = warning;
         emit configurationWarning(warning);
@@ -6488,6 +6492,35 @@ void IcomCivBackend::invokeExtension(const QString& ns, const QString& verb, qui
     // anything; the radio persists DATA OFF MOD itself, so a client value is
     // never replayed onto it. `audio.pc` is the operator-click request and the
     // only path that writes DATA OFF MOD.
+    // `mod.input.data.network` is an operator CLICK on Radio Health's "Set DATA
+    // MOD to WLAN/LAN" button: the one-shot remedy for the "DATA MOD is MIC"
+    // advisory (#6474). A user action is a request, so Principle II permits the
+    // write; nothing calls it unasked, and it touches only DATA MOD (DATA OFF
+    // MOD and PC Audio stay as they are).
+    if (verb == QLatin1String("mod.input.data.network")) {
+        const auto mod = modulationProfileFor(*m_model);
+        if (!mod || mod->dataInputItem < 0 || !m_session) {
+            const QString reason = QStringLiteral(
+                "Cannot set DATA MOD for this Icom model: its model-specific "
+                "SET-menu map is not verified.");
+            emit configurationWarning(reason);
+            if (requestId != 0) {
+                emit extensionError(requestId, reason);
+            }
+            return;
+        }
+        const quint8 addr = m_session->civAddress();
+        sendUserCommand(cmdWriteSetting(addr, mod->dataInputItem,
+                                        mod->networkOnlyValue));
+        // Read it straight back so Radio Health and the advisory follow the
+        // radio's answer, not our intent.
+        const auto readBack = cmdReadSetting(addr, mod->dataInputItem);
+        queueRead(readBack, semanticKey(readBack), IcomCivScheduler::Priority::Control);
+        if (requestId != 0) {
+            emit extensionResult(requestId, true);
+        }
+        return;
+    }
     if (verb == QLatin1String("audio.pc.state")) {
         m_pcAudioEnabled = arg.toBool();
         checkModInput();
@@ -7116,6 +7149,17 @@ IRadioBackend::HealthSnapshot IcomCivBackend::healthSnapshot() const
             h.values.insert(QStringLiteral("datamod"), describe(m_dataModInput));
             h.labels.insert(QStringLiteral("datamod"), QStringLiteral("DATA MOD"));
             h.order << QStringLiteral("datamod");
+            // Not in `order`, so not shown as rows: they drive Radio Health's
+            // "Set DATA MOD to WLAN/LAN" button.
+            h.values.insert(QStringLiteral("datamod.isNetwork"),
+                            m_dataModInput == mod->networkOnlyValue);
+            for (const ModulationInputChoice& choice : mod->choices) {
+                if (choice.value == mod->networkOnlyValue) {
+                    h.values.insert(QStringLiteral("datamod.networkLabel"),
+                                    QString::fromUtf8(choice.label.data(),
+                                                      static_cast<int>(choice.label.size())));
+                }
+            }
         }
     }
     h.order << QStringLiteral("civ");
