@@ -673,6 +673,9 @@ public:
     // mismatch. Writes nothing: Principle III owns DATA OFF MOD to the radio,
     // so a connect must never replay this client-persisted flag onto it.
     void notePcAudioEnabled(bool on);
+    // An operator CLICK on Radio Health's "Set DATA MOD to WLAN/LAN": asks an
+    // Icom to take DATA-mode modulation from the network (#6474).
+    void setDataModToNetwork();
     bool ensureDaxTxStream(DaxTxRequestReason reason);
     bool prepareWsprTransmit(const TxCoordinator::Request& input);
     void releaseWsprTransmit(const TxCoordinator::Request& input);

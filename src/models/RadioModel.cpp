@@ -614,6 +614,16 @@ void RadioModel::setPcAudioEnabled(bool on)
                                QStringLiteral("audio.pc"), 0, on);
 }
 
+void RadioModel::setDataModToNetwork()
+{
+    // Same rule as setPcAudioEnabled: the namespace is the contract.
+    if (!backendDeclaresExtension(QStringLiteral("icom"))) {
+        return;
+    }
+    m_backend->invokeExtension(QStringLiteral("icom"),
+                               QStringLiteral("mod.input.data.network"), 0, true);
+}
+
 void RadioModel::notePcAudioEnabled(bool on)
 {
     // Same rule as setPcAudioEnabled above: the namespace is the contract.

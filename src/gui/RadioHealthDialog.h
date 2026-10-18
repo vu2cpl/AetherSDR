@@ -3,6 +3,7 @@
 #include "PersistentDialog.h"
 
 class QLabel;
+class QPushButton;
 class QTableWidget;
 class QTimer;
 
@@ -31,6 +32,9 @@ private:
     QTableWidget* m_table{nullptr};
     QLabel* m_statusLabel{nullptr};
     QTimer* m_refreshTimer{nullptr};
+    // Shown only when the backend reports a DATA MOD it can set (Icom);
+    // enabled while DATA MOD is not the network source (#6474).
+    QPushButton* m_dataModBtn{nullptr};
     // The row layout is rebuilt only when the KEY SET changes, not on every
     // tick: rebuilding a QTableWidget every refresh would drop the operator's
     // selection and scroll position twice a second while they were reading it.
