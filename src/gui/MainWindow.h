@@ -40,6 +40,7 @@
 #include "gui/SplitQsySettings.h"
 #include "gui/ShortcutRefusalNotice.h"
 #include "core/CatPort.h"
+#include "core/ConnectionProfiles.h"
 #ifdef HAVE_WEBSOCKETS
 #include "core/TciServer.h"
 #endif
@@ -1797,6 +1798,8 @@ private:
 
     // Menus
     QMenu*           m_profilesMenu{nullptr};
+    QAction*         m_connectionProfilesAct{nullptr};   // always visible
+    QAction*         m_profilesListSeparator{nullptr};   // global-profile list follows
     QAction*         m_txBandAction{nullptr};
     QMenu*           m_tuneInhibitMenu{nullptr};  // Flex rear-panel TX outputs — dimmed off-Flex (#5263)
     // Settings ▸ "Autostart DAX with AetherSDR". Held so
@@ -2014,6 +2017,28 @@ private:
     // somewhere to show; cleared when the operator disconnects on purpose or
     // removes that tab.
     RadioTabEntry m_lastSessionTab;
+
+    // ── Connection profiles (MainWindow_ConnectionProfiles.cpp) ────────────
+    // Named radio + route + settings, shown in the radio strip in place of
+    // discovered radios once one exists. A click connects, or (after asking)
+    // disconnects the live one or switches to another.
+    void wireConnectionProfiles();
+    void loadConnectionProfiles();
+    void saveConnectionProfiles();
+    void showConnectionProfilesDialog();
+    QList<RadioTabEntry> connectionProfileTabs() const;
+    ConnectionSessionIdentity currentSessionIdentity() const;
+    QString liveConnectionProfileId() const;
+    void onConnectionProfileActivated(const QString& profileId);
+    bool connectToConnectionProfile(const ConnectionProfile& profile);
+    void applyConnectionProfileSettings(const QString& profileId, int attempt = 0);
+    ConnectionProfileSet m_connectionProfiles;
+    QString m_activeProfileId;    // the profile that started the live session
+    QString m_pendingProfileId;   // connect this once the current session ends
+    QString m_applyProfileId;     // apply this profile's settings on connect
+    // Set on a real connect edge, so the disconnect edge a backend family swap
+    // emits mid-connect cannot clear the profile that is still connecting.
+    bool m_profileSessionLive{false};
     static constexpr int kMaxAutoConnectAttempts = 3;
     QDialog* m_reconnectDlg{nullptr}; // shown on unexpected disconnect, dismissed on reconnect
     QString m_terminalConnectionError; // preserved until the next explicit connect

@@ -1141,6 +1141,14 @@ void MainWindow::buildMenuBar()
 
     // ── Profiles menu ──────────────────────────────────────────────────────
     m_profilesMenu = menuBar()->addMenu("&Profiles");
+    // Connection profiles work for every radio family, so they head the menu
+    // and stay visible; everything below the first separator is the radio's
+    // own profile store and hides on a radio without one.
+    m_connectionProfilesAct = m_profilesMenu->addAction(tr("Connection Profiles..."));
+    m_connectionProfilesAct->setObjectName(QStringLiteral("connectionProfilesAction"));
+    connect(m_connectionProfilesAct, &QAction::triggered,
+            this, &MainWindow::showConnectionProfilesDialog);
+    m_profilesMenu->addSeparator();
     auto* profileMgrAct = m_profilesMenu->addAction("Profile Manager...");
     connect(profileMgrAct, &QAction::triggered, this, [this] {
         showOrRaisePersistent(m_profileManagerDialog, &m_radioModel);
@@ -1149,7 +1157,7 @@ void MainWindow::buildMenuBar()
     connect(profileImportExportAct, &QAction::triggered, this, [this] {
         showOrRaisePersistent(m_profileImportExportDialog, &m_radioModel);
     });
-    m_profilesMenu->addSeparator();
+    m_profilesListSeparator = m_profilesMenu->addSeparator();
 
     // Global profile list (populated on connect).  Rebuilt on every
     // globalProfilesChanged() — the radio emits that for both the list and the
@@ -1161,7 +1169,8 @@ void MainWindow::buildMenuBar()
         // QAction parented to the menu, so a session's worth of rebuilds would
         // otherwise accumulate detached actions.
         const auto actions = m_profilesMenu->actions();
-        for (int i = 3; i < actions.size(); ++i)  // skip Manager, Import/Export, separator
+        const qsizetype listStart = actions.indexOf(m_profilesListSeparator) + 1;
+        for (qsizetype i = listStart; listStart > 0 && i < actions.size(); ++i)
             delete actions[i];
 
         // Add the current global profiles.  The radio reports an empty active

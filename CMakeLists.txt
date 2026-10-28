@@ -999,6 +999,7 @@ set(CORE_SOURCES
     src/core/ChannelStripPresets.cpp
     src/core/AetherRxProfiles.cpp
     src/core/AetherTxProfiles.cpp
+    src/core/ConnectionProfiles.cpp     # title-bar connection profiles (QtCore only)
     src/core/Biquad.cpp
     src/core/StereoBiquad.cpp
     src/core/ClientEq.cpp
@@ -1310,6 +1311,7 @@ set(GUI_SOURCES
     src/gui/MainWindow_DspApplets.cpp
     src/gui/MainWindow_Menus.cpp
     src/gui/MainWindow_Session.cpp
+    src/gui/MainWindow_ConnectionProfiles.cpp
     src/gui/MainWindow_Shortcuts.cpp
     src/gui/MainWindow_DigitalModes.cpp
     src/gui/MainWindow_Spots.cpp
@@ -1442,6 +1444,7 @@ set(GUI_SOURCES
     src/gui/PanadapterHeader.cpp
     src/gui/FramelessMessageBox.cpp
     src/gui/ProfileManagerDialog.cpp
+    src/gui/ConnectionProfilesDialog.cpp
     src/gui/SettingsBrowserDialog.cpp
     src/gui/ProfileImportExportDialog.cpp
     src/gui/TxBandDialog.cpp

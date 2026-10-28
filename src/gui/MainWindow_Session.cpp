@@ -309,6 +309,16 @@ void MainWindow::refreshRadioTabs()
             || entry.id == m_lastSessionTab.id
             || !hidden.contains(entry.id);
     }
+    if (!m_connectionProfiles.isEmpty()) {
+        // Profiles replace the radio tabs; discovered radios stay one click
+        // away in the "+" popover.
+        const QString live = liveConnectionProfileId();
+        m_titleBar->setRadioTabs(connectionProfileTabs());
+        m_titleBar->setDiscoveredRadios(tabs);
+        m_titleBar->setActiveRadio(live.isEmpty() ? QString()
+                                                  : QStringLiteral("profile:") + live);
+        return;
+    }
     m_titleBar->setRadioTabs(tabs);
     m_titleBar->setDiscoveredRadios(tabs);
     m_titleBar->setActiveRadio(activeSerial);
@@ -547,6 +557,10 @@ void MainWindow::wireDiscovery()
         // operator confirm — the tab is a selector, not a disconnect button.
         connect(m_titleBar, &TitleBar::radioTabActivated, this,
                 [this](const QString& radioId) {
+            if (radioId.startsWith(QStringLiteral("profile:"))) {
+                onConnectionProfileActivated(radioId.mid(8));
+                return;
+            }
             if (m_radioModel.isConnected() && m_radioModel.serial() == radioId) {
                 return;   // already the active session — nothing to do
             }
@@ -610,6 +624,16 @@ void MainWindow::wireDiscovery()
                 m_connPanel, &ConnectionPanel::retryDiscoveryRequested);
         connect(m_titleBar->radioTabBar(), &RadioTabBar::radioActionRequested,
                 this, [this](const QString& radioId, const QString& action) {
+            if (radioId.startsWith(QStringLiteral("profile:"))) {
+                // A profile tab's menu: disconnect goes through the same
+                // confirmation as clicking the live tab; the rest are radio
+                // actions and live in the "+" popover's rows.
+                if (action == QStringLiteral("disconnect")
+                    && liveConnectionProfileId() == radioId.mid(8)) {
+                    onConnectionProfileActivated(radioId.mid(8));
+                }
+                return;
+            }
             const bool active = m_radioModel.isConnected() && m_radioModel.serial() == radioId;
             if (action == QStringLiteral("disconnect")) {
                 if (active) {
