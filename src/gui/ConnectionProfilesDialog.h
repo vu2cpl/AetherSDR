@@ -26,6 +26,10 @@ public:
         // The live session as a ready-made profile (empty serial and address
         // when nothing is connected), for "New from current connection".
         ConnectionProfile current;
+        // Radios reachable right now (LAN discovery, SmartLink list), each as
+        // a ready-made profile, so the operator picks a radio rather than
+        // typing its serial.
+        QList<ConnectionProfile> knownRadios;
         QStringList flexGlobalProfiles;
         QStringList flexTxProfiles;
         QStringList modes;
@@ -47,8 +51,10 @@ private:
     ConnectionProfileSet m_profiles;
     Context m_context;
     QString m_editingId;
+    QString m_pickedRadioLabel;   // from the Radio list, until the next load
 
     QListWidget*    m_list{nullptr};
+    QComboBox*      m_radioPick{nullptr};
     QLineEdit*      m_name{nullptr};
     QComboBox*      m_route{nullptr};
     QComboBox*      m_family{nullptr};

@@ -77,6 +77,19 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
     m_name->setPlaceholderText(tr("e.g. MSHV, JTDX-VU"));
     form->addRow(tr("Name"), m_name);
 
+    m_radioPick = new QComboBox(bodyWidget());
+    m_radioPick->setObjectName(QStringLiteral("connectionProfileRadio"));
+    m_radioPick->setAccessibleName(tr("Radio"));
+    m_radioPick->addItem(m_context.knownRadios.isEmpty()
+                             ? tr("No radios found — fill in below")
+                             : tr("Choose a radio…"));
+    for (const ConnectionProfile& r : std::as_const(m_context.knownRadios)) {
+        const QString where = r.route == ConnectionProfile::Route::SmartLink
+            ? tr("SmartLink") : (r.address.isEmpty() ? tr("LAN") : r.address);
+        m_radioPick->addItem(QStringLiteral("%1 — %2").arg(r.name, where));
+    }
+    form->addRow(tr("Radio"), m_radioPick);
+
     m_route = new QComboBox(bodyWidget());
     for (auto r : {ConnectionProfile::Route::Lan, ConnectionProfile::Route::Ip,
                    ConnectionProfile::Route::SmartLink})
@@ -91,6 +104,7 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
     form->addRow(tr("Radio type"), m_family);
 
     m_serial = new QLineEdit(bodyWidget());
+    m_serial->setPlaceholderText(tr("filled in when you choose a radio"));
     form->addRow(tr("Serial"), m_serial);
     m_address = new QLineEdit(bodyWidget());
     m_address->setPlaceholderText(QStringLiteral("192.168.1.148"));
@@ -145,6 +159,19 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
         "QPushButton:focus, QLineEdit:focus { border: 1px solid {{color.border.accent}}; }"));
 
     connect(m_route, &QComboBox::currentIndexChanged, this, &ConnectionProfilesDialog::updateRouteFields);
+    connect(m_radioPick, &QComboBox::activated, this, [this](int index) {
+        if (index <= 0 || index > m_context.knownRadios.size())
+            return;
+        const ConnectionProfile& r = m_context.knownRadios.at(index - 1);
+        m_route->setCurrentIndex(std::max(0, m_route->findData(connectionRouteToken(r.route))));
+        m_family->setCurrentIndex(std::max(0, m_family->findData(r.family)));
+        m_serial->setText(r.serial);
+        m_address->setText(r.address);
+        m_pickedRadioLabel = r.radioLabel;
+        if (m_name->text().trimmed().isEmpty())
+            m_name->setText(r.name);
+        updateRouteFields();
+    });
     connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row >= 0 && row < m_profiles.profiles().size())
             loadEditor(m_profiles.profiles().at(row));
@@ -177,10 +204,10 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
             setStatus(tr("Give the profile a name."), true);
             return;
         }
-        const bool needsAddress = p.route == ConnectionProfile::Route::Ip;
-        if (needsAddress ? p.address.isEmpty() : p.serial.isEmpty()) {
-            setStatus(needsAddress ? tr("Connecting by IP needs an address.")
-                                   : tr("LAN and SmartLink profiles need the radio's serial."),
+        if (!p.isReachable()) {
+            setStatus(p.route == ConnectionProfile::Route::SmartLink
+                          ? tr("Choose the radio from the Radio list (log in to SmartLink first).")
+                          : tr("Choose a radio from the list, or enter its address."),
                       true);
             return;
         }
@@ -220,6 +247,8 @@ void ConnectionProfilesDialog::rebuildList(const QString& selectId)
 void ConnectionProfilesDialog::loadEditor(const ConnectionProfile& p)
 {
     m_editingId = p.id;
+    m_pickedRadioLabel.clear();
+    m_radioPick->setCurrentIndex(0);
     m_name->setText(p.name);
     m_route->setCurrentIndex(std::max(0, m_route->findData(connectionRouteToken(p.route))));
     m_family->setCurrentIndex(std::max(0, m_family->findData(p.family)));
@@ -242,6 +271,8 @@ ConnectionProfile ConnectionProfilesDialog::editorProfile() const
         p = *existing;
     else if (m_context.current.serial == m_serial->text().trimmed())
         p.radioLabel = m_context.current.radioLabel;
+    if (!m_pickedRadioLabel.isEmpty())
+        p.radioLabel = m_pickedRadioLabel;
     p.id = m_editingId;
     p.name = m_name->text().trimmed();
     p.route = connectionRouteFromToken(m_route->currentData().toString());

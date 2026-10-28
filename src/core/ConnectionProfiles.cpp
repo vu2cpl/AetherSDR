@@ -27,6 +27,17 @@ ConnectionProfile::Route connectionRouteFromToken(const QString& token)
     return ConnectionProfile::Route::Lan;
 }
 
+bool ConnectionProfile::isReachable() const
+{
+    switch (route) {
+    case Route::Ip:        return !address.isEmpty();
+    case Route::SmartLink: return !serial.isEmpty();
+    case Route::Lan:       break;
+    }
+    // LAN prefers the discovered serial and falls back to the address.
+    return !serial.isEmpty() || !address.isEmpty();
+}
+
 bool ConnectionProfile::appliesSettings() const
 {
     return !flexGlobalProfile.isEmpty() || !flexTxProfile.isEmpty()
@@ -169,8 +180,7 @@ ConnectionProfileSet ConnectionProfileSet::fromJson(const QJsonObject& obj)
         ConnectionProfile p = ConnectionProfile::fromJson(v.toObject());
         // A profile with no way to reach a radio, or a duplicate id, is
         // dropped rather than shown as a tab that cannot connect.
-        const bool reachable = p.route == ConnectionProfile::Route::Ip
-            ? !p.address.isEmpty() : !p.serial.isEmpty();
+        const bool reachable = p.isReachable();
         if (p.id.isEmpty() || !reachable || set.find(p.id))
             continue;
         if (p.name.isEmpty())
