@@ -275,8 +275,9 @@
           "_sleep": 0.8
         }
       ],
-      "caption": "The VFO flag with the audio tab open.",
-      "alt": "VFO flag with the speaker tab open below the frequency. It holds an AF slider at 50, a SQL slider at 20, an AGC mode selector set to Med with its threshold slider at 65, and a DIV button next to a left-right pan slider."
+      "caption": "The VFO flag audio tab with radio Auto AGC-T enabled.",
+      "alt": "VFO flag tuned to 14.250.000 USB with the speaker tab open. AF, SQL and pan sliders are shown. The AGC row contains a Med selector, enabled threshold slider at 41 and a lit Auto button on the right.",
+      "capture_note": "Current image captured from the real production widgets by auto_agc_threshold_gui_test with injected status and QT_SCALE_FACTOR=1.6667; no radio connection or RF activity."
     },
     {
       "id": "vfo-dsp-tab",
@@ -522,8 +523,9 @@
       "grab": {
         "target": "RX"
       },
-      "caption": "The RX Controls applet for the active slice.",
-      "alt": "RX Controls applet. The top row shows the slice buttons A (lit), B, C and D, a lock button, RX antenna ANT1, TX antenna ANT1 and filter width 2.7K. Below are a red TX badge, the mode selector set to USB and the frequency 14.250.000, then the tuning step selector at 500 and the AF gain and pan sliders, filter preset buttons 1.8K, 2.1K, 2.4K, 2.7K (lit), 2.9K and 3.3K beside the SQL and AGC (Med) controls, a passband graphic reading 100, 2.7K and 2800, and RIT and XIT offsets of +0 Hz."
+      "caption": "The RX Controls applet with the compact A button beside the AGC-T slider.",
+      "alt": "RX Controls applet tuned to 14.250.000 USB. The filter presets and passband graph sit beside the audio, squelch and AGC controls. The Med selector, enabled threshold slider at 41 and lit A button share one row; RIT and XIT are below.",
+      "capture_note": "Current image captured from the real production widgets by auto_agc_threshold_gui_test with injected status and QT_SCALE_FACTOR=1.6667; no radio connection or RF activity."
     },
     {
       "id": "tx-applet",
@@ -1245,44 +1247,6 @@
       ],
       "caption": "Typing in the search box filters the page list: here, latency matches the Audio page.",
       "alt": "Radio Setup with latency typed in the search box. The left tree now shows only RECEIVE & TRANSMIT with the Audio page under it, while the right side still shows the Radio page, with the serial number, radio ID and station name blacked out."
-    },
-    {
-      "id": "firmware-update-group",
-      "page": "firmware-update",
-      "anchor_heading": "Setup",
-      "steps": [
-        {
-          "cmd": "invoke",
-          "target": "Radio Setup...",
-          "action": "trigger"
-        },
-        {
-          "wait_visible": "RadioSetupDialog"
-        },
-        {
-          "cmd": "resize",
-          "target": "RadioSetupDialog",
-          "value": "960 680"
-        },
-        {
-          "cmd": "invoke",
-          "target": "radioSetupNavigation",
-          "action": "setCurrentText",
-          "value": "Radio",
-          "_sleep": 1.5
-        }
-      ],
-      "grab": {
-        "target": "RadioSetupDialog"
-      },
-      "crop": {
-        "union": [
-          "group:FW Version:"
-        ],
-        "pad": 6
-      },
-      "caption": "The Firmware Update group on the Radio page.",
-      "alt": "Firmware Update group showing FW Version: 4.2.20.41343 with a copy button, and three buttons: Check for Update, Select Installer... and a dimmed Upload Firmware."
     },
     {
       "id": "radio-setup-network-advanced",
@@ -2153,7 +2117,7 @@
         "target": "MqttSettingsDialog"
       },
       "caption": "The MQTT Settings window with the default broker fields.",
-      "alt": "MQTT Settings window with tabs Broker, Subscriptions and Publish Buttons, on Broker. Host is localhost, Port 1883, User and Password are empty, TLS has a Use TLS option and CA cert is optional, blank = system CA bundle with a Browse… button. OK, Cancel and Apply buttons sit at the bottom."
+      "alt": "MQTT Settings window with its title in the canon header and a round close button in the top-right corner, and tabs Broker, Subscriptions and Publish Buttons, on Broker. Host is localhost, Port 1883, User and Password are empty, TLS has a Use TLS option and CA cert is optional, blank = system CA bundle with a Browse… button. OK, Cancel and Apply buttons sit at the bottom."
     },
     {
       "id": "callsign-lookup-prefix",
@@ -2275,7 +2239,7 @@
         "target": "MultiFlexDialog"
       },
       "caption": "The multiFLEX Dashboard: every station sharing the radio.",
-      "alt": "multiFLEX Dashboard window headed multiFLEX Stations with a green Enabled indicator. A table with columns Local PTT, Station, TX Ant and TX Freq (MHz) lists one row: a tick, AetherSDR, ANT1 and 14.250. A Close button sits at the bottom right."
+      "alt": "multiFLEX Dashboard window with a round close button in its top-right corner and a green Enabled button under its header. A table with columns Local PTT, Station, TX Ant and TX Freq (MHz) lists one row: a tick, AetherSDR, ANT1 and 14.250."
     },
     {
       "id": "profile-manager",
@@ -3809,7 +3773,7 @@
         }
       ],
       "caption": "The FFTW Wisdom window, shown the first time NR2 starts on a computer.",
-      "alt": "AetherSDR FFTW Wisdom window. It reads Computing COMPLEX FORWARD FFT size 2048... and This window will automatically close when wisdom generation is complete, above a progress bar at 38%, Working..., an elapsed time of 0:09 and a Cancel button."
+      "alt": "FFTW Wisdom window. It reads Computing COMPLEX FORWARD FFT size 2048... and This window will automatically close when wisdom generation is complete, above a progress bar at 38%, Working..., an elapsed time of 0:09 and a Cancel button."
     },
     {
       "id": "psk-reporter-sidebar",
@@ -4181,7 +4145,7 @@
         }
       ],
       "caption": "The Add menu on the Peripherals page: every device type AetherSDR can configure.",
-      "alt": "Peripherals Add menu: Tuner Genius XL, Power Genius XL, Antenna Genius, ShackSwitch, ACOM Amplifier, SPE Expert Amplifier, VK3AMP Amplifier, Elecraft KPA1500 and LP-100A Meter."
+      "alt": "Peripherals Add menu: Tuner Genius XL, Power Genius XL, Antenna Genius, ShackSwitch, ACOM Amplifier, SPE Expert Amplifier, VK3AMP Amplifier, RF-KIT Amplifier, Elecraft KPA1500 and LP-100A Meter."
     },
     {
       "id": "radio-list-popup",

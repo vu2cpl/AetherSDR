@@ -19,7 +19,8 @@ namespace AetherSDR {
 class FirmwareStager : public QObject {
     Q_OBJECT
 public:
-    explicit FirmwareStager(QObject* parent = nullptr);
+    // An empty directory uses stagingDir(); callers can supply an isolated one.
+    explicit FirmwareStager(QObject* parent = nullptr, const QString& stagingDirectory = {});
 
     // Fetch the SmartSDR releases FlexRadio publishes, and judge nothing.
     // Answers `publishedReleasesKnown` or `latestVersionUnavailable` exactly once.
@@ -64,8 +65,8 @@ public:
 
     // Stage firmware from an installer file the user has already downloaded.
     // Accepts .msi (v4.2+), .exe (v4.1.x and earlier), or .ssdr (no extraction
-    // needed; passed straight through to staging). Version is parsed from the
-    // filename when present, otherwise stays empty until the radio confirms.
+    // needed; its filename is preserved). Version is parsed from the filename
+    // when present, otherwise reported as "unknown".
     void stageFromLocalFile(const QString& installerPath, const QString& modelFamily);
 
     // Cancel in-progress download
@@ -75,8 +76,12 @@ public:
     QString stagedFilePath() const { return m_stagedPath; }
     QString stagedVersion()  const { return m_stagedVersion; }
     bool    isStaged()       const { return !m_stagedPath.isEmpty(); }
+    // True only when the staged installer's MD5 matched FlexRadio's
+    // published hash; false when no hash was available or for a local file.
+    bool    stagedVerified() const { return m_stagedVerified; }
 
-    // Map radio model string to firmware model family
+    // Map the FlexLib hardware platform to its installer payload name.
+    // BigBend (8000/Aurora) uses "9600"; unverified platforms return empty.
     static QString modelToFamily(const QString& model);
 
     // Staging directory
@@ -98,14 +103,16 @@ signals:
     void stageFailed(const QString& error);
 
 private:
+    QString stagingDirectory() const;
     void onInstallerDownloadProgress(qint64 received, qint64 total);
     void onInstallerDownloadFinished();
     void verifyAndExtract();
 
-    // Format-specific extractors. Both produce a .ssdr file at outPath and
-    // emit progress/failed signals on the way.
+    // Format-specific extractors emit progress/failed signals on the way.
     bool extractFromInnoSetup(const QByteArray& data, const QString& outPath);
-    bool extractFromMsi(const QString& msiPath, const QString& outPath);
+    // Preserve the MSI FileName and return its staged path after saving.
+    bool extractFromMsi(const QString& msiPath, const QString& outputDirectory,
+                        QString& extractedPath);
 
     // Returns true if the version uses the WiX MSI installer (v4.2+) instead
     // of the older InnoSetup .exe.
@@ -129,6 +136,7 @@ private:
     static constexpr qint64 kMaxSoftwareIndexBytes = 1 * 1024 * 1024;
 
     QNetworkAccessManager m_nam;
+    QString         m_stagingDirectory;
     QNetworkReply*  m_downloadReply{nullptr};
     QString         m_installerPath;
     QString         m_expectedMd5;
@@ -137,6 +145,7 @@ private:
     QString         m_stagedPath;
     QString         m_stagedVersion;
     bool            m_cancelled{false};
+    bool            m_stagedVerified{false};
 
     // v4.1.x and earlier: InnoSetup self-extracting .exe.
     // v4.2+: WiX 6 MSI (OLE Compound File with embedded LZX-compressed CABs).

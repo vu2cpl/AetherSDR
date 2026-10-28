@@ -2,7 +2,6 @@
 #include "core/AppSettings.h"
 #include "core/backends/ConnectionSharingPolicy.h"  // in-use share gate (#4448), shared with MainWindow_Session
 #include "core/backends/anan/AnanDiscovery.h" // shared nickname + MAC->serial helpers
-#include "core/backends/anan/AnanSettings.h"  // owned "Anan" settings object (Principle V)
 #include "core/backends/anan/P2Protocol.h"  // buildDiscovery/parseDiscoveryReply, kRadioPort
 #include "core/backends/hl2/Hl2Discovery.h"   // shared nickname + MAC->serial helpers
 #include "core/backends/icom/IcomCredentials.h"  // password -> OS keychain, never settings
@@ -35,9 +34,11 @@
 #include <QJsonObject>
 #include <QPainter>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QScreen>
 #include <QSignalBlocker>
 #include <QSizePolicy>
+#include <QSet>
 #include <QSpinBox>
 #include <QTcpSocket>
 #include <QHostInfo>
@@ -304,7 +305,7 @@ QString staleSelectionText(const RadioBindSettings& settings)
     if (iface.isEmpty())
         iface = QStringLiteral("Saved source");
     const QString addr = settings.bindAddress.isNull()
-        ? QStringLiteral("unknown IPv4")
+        ? QStringLiteral("unknown address")
         : settings.bindAddress.toString();
     return QStringLiteral("%1 (unavailable, last %2)").arg(iface, addr);
 }
@@ -911,152 +912,26 @@ ConnectionPanel::ConnectionPanel(QWidget* parent)
     connect(m_manualIcomCivCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) { syncIcomCivCustomRow(); });
 
-    // ANAN-G2 DDC0 rate. The session's STARTING span -- live zoom (the
-    // panadapter's +/- buttons) can change it afterward, but a wide-band
-    // operator would otherwise pay the ~48 kHz default every connect and
-    // have to zoom out by hand every time. Persisted via AnanSettings
-    // (Principle V), not a bare AppSettings key, matching IcomSettings'
-    // shape for this backend's owned config.
-    m_manualAnanRateCombo = new QComboBox(manualGroup);
-    m_manualAnanRateCombo->setObjectName(QStringLiteral("connectionManualAnanRateCombo"));
-    m_manualAnanRateCombo->setAccessibleName(tr("ANAN-G2 sample rate"));
-    m_manualAnanRateCombo->setAccessibleDescription(
-        tr("DDC0 sample rate, in ksps -- also the starting width of the panadapter span. "
-           "Higher rates use more of the radio's Ethernet link."));
-    m_manualAnanRateCombo->setToolTip(
-        tr("DDC0 sample rate (ksps) -- also the starting width of the panadapter span.\n"
-           "Higher rates use more of the radio's Ethernet link."));
-    AetherSDR::applyComboStyle(m_manualAnanRateCombo, comboExtraRules);
-    for (const int ksps : anan::kDdc0RatesKsps)
-        m_manualAnanRateCombo->addItem(tr("%1 ksps").arg(ksps), ksps);
-    {
-        const int idx = m_manualAnanRateCombo->findData(anan::AnanSettings::ddc0RateKsps());
-        m_manualAnanRateCombo->setCurrentIndex(idx >= 0 ? idx : 0);
-    }
-    m_manualAnanRateRow = addManualRow(QStringLiteral("Sample rate:"), m_manualAnanRateCombo);
-    connect(m_manualAnanRateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int index) {
-        if (index < 0) return;
-        anan::AnanSettings::setDdc0RateKsps(m_manualAnanRateCombo->itemData(index).toInt());
-    });
-
-    // Which ADC feeds DDC0 (P2Protocol.h byte 17, spec p.25). Per the
-    // Appendix D block diagram (p.90): ADC0's receive chain sits behind the
-    // Ant1/2/3 relay bank, while ADC1's own RX2 chain is wired straight to
-    // its jack with no relay in front of it -- two physically different
-    // signal paths into the same DDC, not a cosmetic label swap.
-    m_manualAnanAdcCombo = new QComboBox(manualGroup);
-    m_manualAnanAdcCombo->setObjectName(QStringLiteral("connectionManualAnanAdcCombo"));
-    m_manualAnanAdcCombo->setAccessibleName(tr("ANAN-G2 ADC select"));
-    m_manualAnanAdcCombo->setAccessibleDescription(
-        tr("Which receive chain feeds DDC0: ADC0, behind the switched Ant1/2/3 "
-           "relay bank, or ADC1, wired directly to its own RX2 jack."));
-    m_manualAnanAdcCombo->setToolTip(
-        tr("Which receive chain feeds DDC0:\n"
-           "ADC0 -- behind the switched Ant1/2/3 relay bank\n"
-           "ADC1 -- wired directly to its own RX2 jack"));
-    AetherSDR::applyComboStyle(m_manualAnanAdcCombo, comboExtraRules);
-    m_manualAnanAdcCombo->addItem(tr("ADC0 (ANT1/2/3)"), 0);
-    m_manualAnanAdcCombo->addItem(tr("ADC1 (RX2)"), 1);
-    {
-        const int idx = m_manualAnanAdcCombo->findData(anan::AnanSettings::ddc0AdcIndex());
-        m_manualAnanAdcCombo->setCurrentIndex(idx >= 0 ? idx : 0);
-    }
-    m_manualAnanAdcRow = addManualRow(QStringLiteral("Select ADC:"), m_manualAnanAdcCombo);
-    connect(m_manualAnanAdcCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int index) {
-        if (index < 0) return;
-        anan::AnanSettings::setDdc0AdcIndex(m_manualAnanAdcCombo->itemData(index).toInt());
-    });
-
-    // ADC dither/randomization -- standard ADC linearization options
-    // (P2Protocol.h bytes 5/6, spec p.24-25), default on. One control each,
-    // not per-ADC: this radio does not expose a per-ADC pair for either.
-    m_manualAnanDitherCheck = new QCheckBox(tr("Dither"), manualGroup);
-    m_manualAnanDitherCheck->setObjectName(QStringLiteral("connectionManualAnanDither"));
-    m_manualAnanDitherCheck->setAccessibleDescription(
-        tr("Enables the ADC's dither bit. Standard converter linearization; "
-           "leave this on unless you have a specific reason to test without it."));
-    m_manualAnanDitherCheck->setToolTip(
-        tr("Enables the ADC's dither bit -- standard converter linearization.\n"
-           "Leave this on unless you have a specific reason to test without it."));
-    m_manualAnanDitherCheck->setChecked(anan::AnanSettings::ditherEnabled());
-    AetherSDR::ThemeManager::instance().applyStyleSheet(m_manualAnanDitherCheck, lowBandwidthCheckStyle);
-    m_manualAnanDitherRow = addManualRow(QStringLiteral(""), m_manualAnanDitherCheck);
-    connect(m_manualAnanDitherCheck, &QCheckBox::toggled,
-            this, [](bool on) { anan::AnanSettings::setDitherEnabled(on); });
-
-    m_manualAnanRandomCheck = new QCheckBox(tr("Random"), manualGroup);
-    m_manualAnanRandomCheck->setObjectName(QStringLiteral("connectionManualAnanRandom"));
-    m_manualAnanRandomCheck->setAccessibleDescription(
-        tr("Enables the ADC's random bit. Standard converter linearization; "
-           "leave this on unless you have a specific reason to test without it."));
-    m_manualAnanRandomCheck->setToolTip(
-        tr("Enables the ADC's random bit -- standard converter linearization.\n"
-           "Leave this on unless you have a specific reason to test without it."));
-    m_manualAnanRandomCheck->setChecked(anan::AnanSettings::randomEnabled());
-    AetherSDR::ThemeManager::instance().applyStyleSheet(m_manualAnanRandomCheck, lowBandwidthCheckStyle);
-    m_manualAnanRandomRow = addManualRow(QStringLiteral(""), m_manualAnanRandomCheck);
-    connect(m_manualAnanRandomCheck, &QCheckBox::toggled,
-            this, [](bool on) { anan::AnanSettings::setRandomEnabled(on); });
-
-    // Alex0/Alex1's own HF Bypass relays (spec Appendix D p.90-91), one per
-    // ADC's filter bank. Default on, and for now this is NOT a selectivity
-    // trade-off despite the name: this backend has no per-band filter
-    // selection yet (02-working-plan.md Step 3, not started), so nothing
-    // ever picks one of the bank's narrow filters. With Bypass off AND no
-    // filter selected, the relay chain has no closed path through it at
-    // all -- not "filtered but attenuated", literally disconnected. Bypass
-    // stays the only way to receive anything on this ADC until Step 3 adds
-    // real band-filter selection to choose between.
-    m_manualAnanBypassAdc0Check = new QCheckBox(tr("ADC0 RF filter bypass"), manualGroup);
-    m_manualAnanBypassAdc0Check->setObjectName(QStringLiteral("connectionManualAnanBypassAdc0"));
-    m_manualAnanBypassAdc0Check->setAccessibleDescription(
-        tr("Routes ADC0's antenna signal around its front-end filter bank instead of "
-           "through a specific band filter. Leave this checked: no band filter is ever "
-           "selected in this version, so with it unchecked nothing reaches the ADC at "
-           "all, not just a less selective receiver."));
-    m_manualAnanBypassAdc0Check->setToolTip(
-        tr("Routes ADC0's antenna signal around its front-end filter bank instead\n"
-           "of through a specific band filter. Leave this checked: no band filter\n"
-           "is ever selected in this version, so unchecked means nothing reaches\n"
-           "the ADC at all -- not just a less selective receiver."));
-    m_manualAnanBypassAdc0Check->setChecked(anan::AnanSettings::bypassAdc0Filters());
-    AetherSDR::ThemeManager::instance().applyStyleSheet(m_manualAnanBypassAdc0Check, lowBandwidthCheckStyle);
-    m_manualAnanBypassAdc0Row = addManualRow(QStringLiteral(""), m_manualAnanBypassAdc0Check);
-    connect(m_manualAnanBypassAdc0Check, &QCheckBox::toggled,
-            this, [](bool on) { anan::AnanSettings::setBypassAdc0Filters(on); });
-
-    m_manualAnanBypassAdc1Check = new QCheckBox(tr("ADC1 RF filter bypass"), manualGroup);
-    m_manualAnanBypassAdc1Check->setObjectName(QStringLiteral("connectionManualAnanBypassAdc1"));
-    m_manualAnanBypassAdc1Check->setAccessibleDescription(
-        tr("The same bypass, for ADC1's own filter bank (the RX2 jack). Leave this "
-           "checked for the same reason as ADC0's."));
-    m_manualAnanBypassAdc1Check->setToolTip(
-        tr("The same bypass, for ADC1's own filter bank (the RX2 jack).\n"
-           "Leave this checked for the same reason as ADC0's."));
-    m_manualAnanBypassAdc1Check->setChecked(anan::AnanSettings::bypassAdc1Filters());
-    AetherSDR::ThemeManager::instance().applyStyleSheet(m_manualAnanBypassAdc1Check, lowBandwidthCheckStyle);
-    m_manualAnanBypassAdc1Row = addManualRow(QStringLiteral(""), m_manualAnanBypassAdc1Check);
-    connect(m_manualAnanBypassAdc1Check, &QCheckBox::toggled,
-            this, [](bool on) { anan::AnanSettings::setBypassAdc1Filters(on); });
-
-    m_manualAnanSpeakerAudioCheck = new QCheckBox(tr("Send RX audio to the radio's speaker"), this);
-    m_manualAnanSpeakerAudioCheck->setObjectName(QStringLiteral("connectionManualAnanSpeakerAudio"));
-    m_manualAnanSpeakerAudioCheck->setAccessibleDescription(
-        tr("Send the demodulated receive audio back to the radio so its own "
-           "speaker and headphone jack reproduce it, as well as this computer's "
-           "sound card. Off by default. Takes effect on the next connect."));
-    m_manualAnanSpeakerAudioCheck->setToolTip(
-        tr("Send the demodulated receive audio back to the radio, so its own\n"
-           "speaker and headphone jack play it as well as this computer's.\n"
-           "The receiver's mute and volume still apply to both.\n"
-           "Off by default. Takes effect on the next connect."));
-    m_manualAnanSpeakerAudioCheck->setChecked(anan::AnanSettings::speakerAudioEnabled());
-    AetherSDR::ThemeManager::instance().applyStyleSheet(m_manualAnanSpeakerAudioCheck, lowBandwidthCheckStyle);
-    m_manualAnanSpeakerAudioRow = addManualRow(QStringLiteral(""), m_manualAnanSpeakerAudioCheck);
-    connect(m_manualAnanSpeakerAudioCheck, &QCheckBox::toggled,
-            this, [](bool on) { anan::AnanSettings::setSpeakerAudioEnabled(on); });
+    // ANAN-G2's front-end options (DDC0 rate, ADC select, dither,
+    // randomization, the two filter-bank bypasses and the radio-speaker stream)
+    // are set on Settings > Radio Setup > "ANAN Front End", which is reachable
+    // with no radio connected: they configure the session a connect starts, so
+    // they must be settable before the first one. The connect path reads them
+    // from AnanSettings (RadioModel's populateFamilyParams()), never from this
+    // form; this row only points there.
+    //
+    // Added straight to manualForm rather than through addManualRow(): that
+    // helper gives its field a FIXED row height, which would clip a label that
+    // wraps.
+    auto* ananHint = makeWrappedLabel(
+        QStringLiteral("Sample rate, ADC choice, dither, randomization, filter bypass and the "
+                       "radio's own speaker are in Settings > Radio Setup > ANAN Front End. "
+                       "They apply to the next connect."),
+        kHintLabelStyle);
+    ananHint->setObjectName(QStringLiteral("connectionManualAnanSetupHint"));
+    ananHint->setParent(manualGroup);
+    manualForm->addWidget(ananHint);
+    m_manualAnanHintRow = ananHint;
 
     // One column, set from the widest label. Rows that are hidden for a family
     // still count: the Icom rows appear and disappear as the operator changes
@@ -1337,6 +1212,9 @@ ConnectionPanel::ConnectionPanel(QWidget* parent)
                 updateManualAdvancedVisibility();
                 setManualMessage(QString());
             });
+    connect(m_manualSourceCombo, &QComboBox::activated, this, [this](int) {
+        m_manualSourcePick = currentManualBindSettings();
+    });
 
     const auto doLogin = [this] {
         const QString email = m_emailEdit->text().trimmed();
@@ -1417,7 +1295,7 @@ QScreen* ConnectionPanel::screenFitTarget(QScreen* preferredScreen) const
     return targetScreen;
 }
 
-int ConnectionPanel::preferredClientHeight() const
+int ConnectionPanel::preferredClientHeight(int clientWidth) const
 {
     if (!m_bodyContent || !m_bodyScroll) {
         return kPreferredHeight;
@@ -1427,7 +1305,23 @@ int ConnectionPanel::preferredClientHeight() const
     // summing the two widgets keeps this correct without duplicating which of
     // them is visible in which frameless mode.
     const int chromeHeight = sizeHint().height() - m_bodyScroll->sizeHint().height();
-    return qMax(kPreferredHeight, chromeHeight + m_bodyContent->sizeHint().height());
+    int bodyHeight = chromeHeight + m_bodyContent->sizeHint().height();
+
+    // A body wider than the viewport shows a horizontal scrollbar, and that bar
+    // takes its height out of the viewport. Left out, the fit comes up exactly
+    // one bar short and the dialog opens with a vertical scrollbar anyway
+    // (#5811). maximumViewportSize() is the viewport with no scrollbars, which
+    // is the state this fit is aiming for; the horizontal chrome around it
+    // carries over unchanged to the width the caller is about to apply.
+    const int viewportWidth = clientWidth
+        - (width() - m_bodyScroll->maximumViewportSize().width());
+    const int contentMinWidth = m_bodyContent->minimumSizeHint()
+                                    .expandedTo(m_bodyContent->minimumSize())
+                                    .width();
+    if (contentMinWidth > viewportWidth) {
+        bodyHeight += m_bodyScroll->horizontalScrollBar()->sizeHint().height();
+    }
+    return qMax(kPreferredHeight, bodyHeight);
 }
 
 void ConnectionPanel::fitToScreen(QScreen* preferredScreen)
@@ -1459,13 +1353,14 @@ void ConnectionPanel::fitToScreen(QScreen* preferredScreen)
     // operator wants. Growing is a courtesy, so it only applies to a height
     // this function chose — otherwise a dialog dragged short on a big screen
     // would spring back every time it was reopened.
+    const int targetWidth = qMin(width(), maximumClientWidth);
     int targetHeight = qMin(height(), maximumClientHeight);
     if (height() == m_autoFitHeight) {
         targetHeight = qBound(qMin(kSafeMinimumHeight, maximumClientHeight),
-                              preferredClientHeight(),
+                              preferredClientHeight(targetWidth),
                               maximumClientHeight);
     }
-    resize(qMin(width(), maximumClientWidth), targetHeight);
+    resize(targetWidth, targetHeight);
     m_autoFitHeight = height();
 }
 
@@ -1929,10 +1824,21 @@ void ConnectionPanel::updateLowBandwidthVisibility()
 
 void ConnectionPanel::updateManualAdvancedVisibility()
 {
-    const auto candidates = NetworkPathResolver::enumerateIpv4Candidates();
+    const auto family = NetworkPathResolver::targetFamily(
+        m_manualIpEdit ? m_manualIpEdit->text() : QString());
+    const auto candidates = NetworkPathResolver::enumerateCandidates(family);
+    // One IPv6 adapter normally has a GUA and a ULA; that is not a choice of
+    // path, so IPv6 counts adapters. IPv4 keeps counting addresses.
+    qsizetype paths = candidates.size();
+    if (family == QAbstractSocket::IPv6Protocol) {
+        QSet<QString> interfaces;
+        for (const auto& candidate : candidates)
+            interfaces.insert(candidate.interfaceId);
+        paths = interfaces.size();
+    }
     const RadioBindSettings settings = currentManualBindSettings();
     const bool hasExplicitSelection = settings.mode == RadioBindMode::Explicit;
-    const bool showToggle = candidates.size() > 1
+    const bool showToggle = paths > 1
         || hasExplicitSelection
         || m_manualSourceWarningLabel->isVisible();
 
@@ -2291,7 +2197,8 @@ void ConnectionPanel::refreshManualSourceOptions(const RadioBindSettings* select
     m_manualSourceCombo->setItemData(0, false, kSourceStaleRole);
 
     int selectedIndex = 0;
-    const auto candidates = NetworkPathResolver::enumerateIpv4Candidates();
+    const auto candidates = NetworkPathResolver::enumerateCandidates(
+        NetworkPathResolver::targetFamily(m_manualIpEdit ? m_manualIpEdit->text() : QString()));
     for (const auto& candidate : candidates) {
         const int idx = m_manualSourceCombo->count();
         m_manualSourceCombo->addItem(candidate.label());
@@ -2300,13 +2207,13 @@ void ConnectionPanel::refreshManualSourceOptions(const RadioBindSettings* select
         m_manualSourceCombo->setItemData(idx, candidate.interfaceName, kSourceInterfaceNameRole);
         m_manualSourceCombo->setItemData(idx, candidate.address.toString(), kSourceAddressRole);
         m_manualSourceCombo->setItemData(idx, false, kSourceStaleRole);
-
-        if (selected
-            && selected->mode == RadioBindMode::Explicit
-            && ((!selected->interfaceId.isEmpty() && selected->interfaceId == candidate.interfaceId)
-                || (!selected->bindAddress.isNull() && selected->bindAddress == candidate.address))) {
-            selectedIndex = idx;
-        }
+    }
+    if (selected && selected->mode == RadioBindMode::Explicit) {
+        const qsizetype match = NetworkPathResolver::matchSelection(
+            candidates, selected->interfaceId, selected->interfaceName, selected->bindAddress,
+            QHostAddress(m_manualIpEdit ? m_manualIpEdit->text().trimmed() : QString()));
+        if (match >= 0)
+            selectedIndex = 1 + static_cast<int>(match);   // row 0 is Auto
     }
 
     if (selected
@@ -2378,7 +2285,8 @@ void ConnectionPanel::applySavedSourceSelection(const QString& ip, bool restoreF
     RadioBindSettings settings = bindSettingsFromProfile(profile);
     if (settings.mode == RadioBindMode::Explicit) {
         const auto resolved = NetworkPathResolver::resolveExplicitSelection(
-            settings.interfaceId, settings.interfaceName, settings.bindAddress);
+            settings.interfaceId, settings.interfaceName, settings.bindAddress,
+            NetworkPathResolver::targetFamily(trimmedIp), QHostAddress(trimmedIp));
         if (resolved.isValid()) {
             settings.interfaceId = resolved.interfaceId;
             settings.interfaceName = resolved.interfaceName;
@@ -2394,6 +2302,8 @@ void ConnectionPanel::applySavedSourceSelection(const QString& ip, bool restoreF
 
     refreshManualSourceOptions(&settings);
     updateManualAdvancedVisibility();
+    if (restoreFamily)
+        m_manualSourcePick = settings;   // a chosen address brings its own path
 }
 
 RadioBindSettings ConnectionPanel::currentManualBindSettings(bool* staleSelection) const
@@ -2575,20 +2485,8 @@ void ConnectionPanel::updateManualFamilyHints()
     syncIcomCivCustomRow();
     syncIcomPortCustomRow();
 
-    if (m_manualAnanRateRow)
-        m_manualAnanRateRow->setVisible(anan);
-    if (m_manualAnanAdcRow)
-        m_manualAnanAdcRow->setVisible(anan);
-    if (m_manualAnanDitherRow)
-        m_manualAnanDitherRow->setVisible(anan);
-    if (m_manualAnanRandomRow)
-        m_manualAnanRandomRow->setVisible(anan);
-    if (m_manualAnanBypassAdc0Row)
-        m_manualAnanBypassAdc0Row->setVisible(anan);
-    if (m_manualAnanBypassAdc1Row)
-        m_manualAnanBypassAdc1Row->setVisible(anan);
-    if (m_manualAnanSpeakerAudioRow)
-        m_manualAnanSpeakerAudioRow->setVisible(anan);
+    if (m_manualAnanHintRow)
+        m_manualAnanHintRow->setVisible(anan);
 
     if (icom) {
         // Fill from settings, and read the password out of the keychain — which
@@ -2742,7 +2640,8 @@ void ConnectionPanel::onManualIpChanged(const QString& ip)
         // already selected. The saved profile is useful for startup and for
         // choosing a recent address, but it must not silently turn an
         // explicit interface back into Auto during an interactive edit.
-        const RadioBindSettings selected = currentManualBindSettings();
+        const RadioBindSettings selected = m_manualSourcePick.mode == RadioBindMode::Explicit
+            ? m_manualSourcePick : currentManualBindSettings();
         applySavedSourceSelection(trimmed, /*restoreFamily=*/false);
         if (selected.mode == RadioBindMode::Explicit)
             refreshManualSourceOptions(&selected);
@@ -3074,7 +2973,48 @@ void ConnectionPanel::probeRadio(const QString& ip, bool restoreSavedFamily)
         return;
     }
 
-    probeFlexRadio(trimmedIp, bindSettings);
+    RadioBindSettings flexBind = bindSettings;
+    if (!resolveNamedSourceFamily(trimmedIp, &flexBind))
+        return;
+    probeFlexRadio(trimmedIp, flexBind);
+}
+
+bool ConnectionPanel::resolveNamedSourceFamily(const QString& host, RadioBindSettings* bind)
+{
+    // The source list follows the typed text, so a host name lists IPv4
+    // paths. A name with only IPv6 addresses reaches the radio over IPv6:
+    // use the chosen interface's IPv6 address instead of failing on family.
+    if (bind->mode != RadioBindMode::Explicit || !QHostAddress(host).isNull())
+        return true;
+    const QHostInfo info = QHostInfo::fromName(host);
+    QHostAddress v6;
+    for (const QHostAddress& address : info.addresses()) {
+        bool isV4 = false;
+        address.toIPv4Address(&isV4);
+        if (isV4)
+            return true;   // reachable over IPv4: the listed path applies
+        if (v6.isNull() && address.protocol() == QAbstractSocket::IPv6Protocol)
+            v6 = address;
+    }
+    if (v6.isNull())
+        return true;   // unresolved: the probe reports it
+    const NetworkPathCandidate path = NetworkPathResolver::resolveExplicitSelection(
+        bind->interfaceId, bind->interfaceName, bind->bindAddress,
+        QAbstractSocket::IPv6Protocol, v6);
+    if (!path.isValid()) {
+        resetManualConnectButton();
+        setManualMessage(
+            QStringLiteral("“%1” has only IPv6 addresses, and the selected source path has "
+                           "no IPv6 address. Choose Auto or another path.").arg(host),
+            true);
+        reportStartupProbeFailure(
+            QStringLiteral("The source path for “%1” has no IPv6 address.").arg(host));
+        return false;
+    }
+    bind->interfaceId = path.interfaceId;
+    bind->interfaceName = path.interfaceName;
+    bind->bindAddress = path.address;
+    return true;
 }
 
 void ConnectionPanel::handleHl2ProbeResult(Hl2ProbeResult probe, const QString& trimmedIp)

@@ -420,6 +420,10 @@ RadioCapabilities AnanBackend::capabilities() const
     RadioCapabilities c;
     c.broadcastFmReceive = std::nullopt;
     c.family = QStringLiteral("anan");
+    c.panDisplayControl = PanDisplayControl{{PanDisplayField::Geometry, PanDisplayField::RfGain,
+        PanDisplayField::FrameRate, PanDisplayField::Average, PanDisplayField::WeightedAverage,
+        PanDisplayField::SpectrumPoints}, {PanGeometryComponent::Center, PanGeometryComponent::Bandwidth}};
+    c.panLifecycleControl = std::nullopt;  // fixed receiver topology: no pan create/remove
     // No setTune() implementation, so no tune generator to select a mode on.
     c.twoToneGenerator = std::nullopt;
     c.firmwareUpdateSource = std::nullopt;  // gateware number; no published list covers it.
@@ -432,6 +436,7 @@ RadioCapabilities AnanBackend::capabilities() const
     // The radio's speaker output: setLineoutMute() sends it silence and
     // setLineoutGain() scales the samples this host feeds it.
     c.lineoutControl = RadioCapabilities::LineoutControl{};
+    c.radioSetupControl = RadioSetupControl{{RadioSetupField::LineoutGain, RadioSetupField::LineoutMute}};
     // No client owner is declared for "Show TX in Waterfall" on an ANAN.
     c.txWaterfallClientFlag = std::nullopt;
     // The panadapter dBm axis is dBFS with a dBm label: kUncalibratedDbfsToDbmOffset
@@ -461,6 +466,10 @@ RadioCapabilities AnanBackend::capabilities() const
     c.hasAgcThreshold = true; // Host receiver DSP implements threshold/off gain.
     c.manufacturer = QStringLiteral("Apache Labs");
     c.model = QStringLiteral("ANAN-G2");
+    // The session takes its receive front-end options from AnanSettings
+    // (populateFamilyParams()), so the setup page that edits them applies.
+    c.adcFrontEnd = RadioCapabilities::AdcFrontEnd{};
+
     // ---- PA telemetry ----
     // The DC supply rail, published as RAD:+13.8A from every status packet's
     // count (onSupplyRailCounts()). Claimed on a bench measurement, not on the
@@ -494,6 +503,7 @@ RadioCapabilities AnanBackend::capabilities() const
     // ours, the radio echoes nothing back, and there is no register to read.
     c.receiveAudioControl = ReceiveAudioControl{SliceFrequencyControl::Authority::Engine};
     c.receiveAudioExport = std::nullopt; // native DAX export not qualified for this backend
+    c.dspParameterReset = std::nullopt;
     c.receivePanCenterControl = std::nullopt; // center also retunes the slice
     c.receivePanBandwidthControl = ReceivePanRangeControl{SliceFrequencyControl::Authority::Engine,
                                                          48'000, 1'536'000};
@@ -532,7 +542,7 @@ RadioCapabilities AnanBackend::capabilities() const
                               | RadioCapabilities::ClientSettingsDomain::ReceiveOutputLevel;
     c.hostDroopCalibration = true; // AnanDroopCorrection.h -- real DDC0 roll-off,
                                     // corrected client-side via AnanDroopCalibrator
-    c.extensionNamespaces = {QStringLiteral("anan")};  // "droop.apply" -- see invokeExtension()
+    c.extensionNamespaces = {QStringLiteral("anan")};  // "frontend.set", "droop.apply" -- see invokeExtension()
     // From this session's own Discovery reply (P2Client::discoveryInfoReceived()).
     // Absent until it lands ("not reported yet", like tuningMinHz/MaxHz);
     // capabilitiesChanged() fires when it does. numDdc is informational:
@@ -665,6 +675,14 @@ void AnanBackend::connectRadio(const RadioConnectRequest& request)
     // populated this param must not start one.
     m_pendingParams.speakerAudioEnabled =
         request.params.value(QStringLiteral("anan.speakerAudioEnabled"), false).toBool();
+    // Live once connected ("frontend.set" below), and seeded here so the
+    // session's first High Priority packet already carries them. FALSE by
+    // default: both defaults are the bytes this client sent before either
+    // option existed.
+    m_pendingParams.bandFiltersEnabled =
+        request.params.value(QStringLiteral("anan.bandFiltersEnabled"), false).toBool();
+    m_pendingParams.speakerAmpMuted =
+        request.params.value(QStringLiteral("anan.speakerAmpMuted"), false).toBool();
     // applyRestoredState() seeds both ADC values before this connect.
     m_attenuationDb = m_pendingParams.ddc0AdcIndex == 1
         ? m_pendingParams.adc1AttenuationDb
@@ -1455,7 +1473,38 @@ QString AnanBackend::applyDroopTables(const QMap<int, DroopCorrectionTable>& tab
 void AnanBackend::invokeExtension(const QString& ns, const QString& verb,
                                   quint64 requestId, const QVariant& arg)
 {
-    Q_UNUSED(arg);
+    if (ns == QLatin1String("anan") && verb == QLatin1String("frontend.set")) {
+        // The live front-end options. Partial: only the named fields move,
+        // so one control cannot overwrite another. A change reaches the radio
+        // on the next High Priority packet, within 100 ms.
+        //
+        // This persists nothing. The ANAN Front End page writes AnanSettings
+        // and then invokes this; a caller that only invokes it gets a change
+        // that reverts at the next connect, which reads AnanSettings.
+        const QVariantMap fields = arg.toMap();
+        if (fields.contains(QStringLiteral("bandFiltersEnabled"))) {
+            m_pendingParams.bandFiltersEnabled =
+                fields.value(QStringLiteral("bandFiltersEnabled")).toBool();
+            if (m_client) {
+                QMetaObject::invokeMethod(m_client, "setBandFiltersEnabled",
+                                          Qt::QueuedConnection,
+                                          Q_ARG(bool, m_pendingParams.bandFiltersEnabled));
+            }
+        }
+        if (fields.contains(QStringLiteral("speakerAmpMuted"))) {
+            m_pendingParams.speakerAmpMuted =
+                fields.value(QStringLiteral("speakerAmpMuted")).toBool();
+            if (m_client) {
+                QMetaObject::invokeMethod(m_client, "setSpeakerAmpMuted",
+                                          Qt::QueuedConnection,
+                                          Q_ARG(bool, m_pendingParams.speakerAmpMuted));
+            }
+        }
+        if (requestId != 0) {
+            emit extensionResult(requestId, QVariantMap{{QStringLiteral("ok"), true}});
+        }
+        return;
+    }
     if (ns == QLatin1String("anan") && verb == QLatin1String("nb.get")) {
         if (requestId != 0) {
             const AnanRxDsp::NoiseBlankerState applied = m_dsp

@@ -99,7 +99,7 @@ Prefer paper? Download the [printable manual](pathname:///AetherSDR-Manual.pdf) 
 ## Station Accessories
 
 - [Peripherals](./peripherals.md) — Add, remove and auto-connect station accessories; 4O3A access codes; PGXL and Antenna Genius
-- [Amplifiers](./amplifiers.md) — ACOM, SPE Expert, VK3AMP and KPA1500 amplifiers; LP-100A wattmeter
+- [Amplifiers](./amplifiers.md) — ACOM, SPE Expert, VK3AMP, KPA1500 and RF-KIT amplifiers; LP-100A wattmeter
 - [TGXL Tuner Control](./tgxl-tuner-control.md) — 4O3A Tuner Genius XL: direct or relayed, autotune, antenna switch
 - [ShackSwitch](./shackswitch.md) — Network antenna switch with dummy-load protection
 - [Green Heron Everyware](./green-heron-everyware.md) — Green Heron Everyware antenna switch and rotator control
@@ -112,7 +112,7 @@ Prefer paper? Download the [printable manual](pathname:///AetherSDR-Manual.pdf) 
 - [Ulanzi Dial](./ulanzi-dial.md) — Ulanzi Dial knob and keys: wheel actions, key mapping, PTT and CW keying
 - [USB Control Surfaces](./usb-control-surfaces.md) — RC-28, PowerMate, Contour Shuttle, Stream Deck+ and serial PTT/CW interfaces
 - [MIDI Controller Mapping](./midi-controller-mapping.md) — Map any MIDI controller, with Learn mode and profile import/export
-- [CTR2 Proxy](./ctr2-proxy.md) — Relay a CTR2-Max controller to the radio over Wi-Fi (USB pending CTR2 firmware)
+- [CTR2 Proxy](./ctr2-proxy.md) — Relay a CTR2-Max controller to the radio over Wi-Fi or USB, and install AetherCTR2 on it
 
 ## Remote Operation
 

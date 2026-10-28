@@ -3,6 +3,7 @@
 #include "RadioTabBar.h"
 #include "DeferredSettingsWrites.h"
 #include "TxAudioPathPolicy.h"
+#include "SharedTxMeterSelection.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ⚠️  MainWindow is DECOMPOSED (#3351). Add member fields/declarations here ONLY
@@ -21,6 +22,7 @@
 #include "models/SliceLinkPolicy.h"
 #include "core/AppSettings.h"
 #include "core/FirmwareCurrency.h"
+#include "models/VoiceKeyerSource.h"
 #include "core/AetherDspModePolicy.h"
 #include "core/KiwiSdrTxMutePolicy.h"  // optimistic-unkey Kiwi mute latch
 #include "core/RadioMessageTypes.h"   // MessageSeverity for onRadioMessage slot
@@ -32,6 +34,7 @@
 #include "gui/CenterLockRebindTracker.h"
 #include "gui/DaxRestorePolicy.h"       // #4558 last-session DAX restore window
 #include "gui/KiwiRebindTracker.h"      // #4158 band-recall Kiwi re-bind policy
+#include "gui/RxPlaybackMuteOwners.h"    // who is holding live RX off the sink
 #include "gui/SplitAudioProfile.h"       // #2242 remembered split audio arrangement
 #include "gui/SplitQsyObservationPolicy.h"
 #include "gui/SplitQsySettings.h"
@@ -81,6 +84,7 @@
 #endif
 #ifdef HAVE_HIDAPI
 #include "core/HidEncoderManager.h"
+#include "core/ShuttleRateIntegrator.h"
 #endif
 #include "core/ShortcutManager.h"
 #include "core/SpectrogramBuffer.h"
@@ -91,7 +95,11 @@
 #include "core/LpMeterConnection.h"
 #include "core/SpeConnection.h"
 #include "core/VkampConnection.h"
+#include "core/Kpa500Connection.h"
+#include "models/Kat500Model.h"
+#include "models/Kxpa100Model.h"
 #include "core/Kpa1500Connection.h"
+#include "core/RfkitConnection.h"
 #include "core/DxccColorProvider.h"
 
 #include <QMainWindow>
@@ -136,6 +144,7 @@ class AutomationServer;
 class CanonWindow;
 class ConnectionPanel;
 class Ctr2ProxyModel;
+class FirmwareInstallDialog;
 class TitleBar;
 class KiwiSdrManager;
 struct KiwiSdrAntennaProfile;
@@ -157,6 +166,7 @@ class MemoryHistoryRing;
 class CpuHistoryRing;
 class UiTickLagMeter;
 class WhatsNewDialog;
+class Nr2WisdomDialog;
 class ProfileManagerDialog;
 class SettingsBrowserDialog;
 class ProfileImportExportDialog;
@@ -172,6 +182,8 @@ struct NetEntry;
 struct MemoryEntry;
 class PropDashboardDialog;
 class UpdateChecker;
+class UpdateController;
+class UpdatesWindow;
 class TxBandDialog;
 class BandscopeDialog;
 class AetherRxDialog;
@@ -183,6 +195,7 @@ class LiveCwContactsDialog;
 class Ax25HfPacketDecodeDialog;
 class PskReporterMapDialog;
 class GpsLocationDialog;
+class MultiFlexDialog;
 #ifdef AETHER_ASR_ENABLED
 class CopyAssistController;
 #endif
@@ -203,6 +216,7 @@ class UlanziDialBackend;
 #endif
 class CwxPanel;
 class DvkPanel;
+class VoiceKeyerController;
 #ifdef HAVE_RADE
 class RADEEngine;
 #endif
@@ -436,6 +450,12 @@ private:
 
     void buildUI();
     void buildMenuBar();
+    void wireUpdateChecker();          // MainWindow_Menus.cpp
+    void showUpdatesWindow(bool checkNow);  // MainWindow_Menus.cpp
+    void setAutomaticUpdateCheck(bool on);  // MainWindow_Menus.cpp
+    void restoreKnownUpdate();         // MainWindow_Menus.cpp
+    void restartToUpdate();            // MainWindow_Menus.cpp
+    void reportLastUpdate();           // MainWindow_Menus.cpp
     void minimizeActiveApplicationWindow();
     void toggleActiveApplicationWindowFullScreen();
     void applyDarkTheme();
@@ -571,6 +591,12 @@ private:
     // docked one) and dim it with the reason on the others; otherwise every
     // pane keeps its own live pair. PanSpanControlGate.h.
     void syncPanSpanControlPlacement();
+    // The connected backend declares pan display controls without span, so no
+    // zoom route can change it (the Demo). Absent declarations are not fixed.
+    bool panSpanFixedByBackend() const;
+    // Set while syncKiwiSdrPanadapterUiStates() walks every pane, so the span
+    // pair is re-derived once after the walk rather than once per pane.
+    bool m_kiwiSpanSyncDeferred{false};
     void updateSplitState();
     void disableSplit();
     // The split pair, derived from model truth (#3726) rather than from the
@@ -659,12 +685,16 @@ private:
     // PanadapterStream::pcmFrameReady → AudioEngine::feedPcmFrame must consult
     // this, or the two sources sum at the sink (wobble + distortion).
     bool backendFeedsEngineDirectly();        // MainWindow_Session.cpp
-    // Live RX is muted while the QSO recorder or the PUDU monitor plays audio
-    // back through the same sink. The Flex path achieves that by disconnecting
-    // PanadapterStream::pcmFrameReady; a seam backend has no such connection
-    // to drop, so its relay consults this instead. See the muteRxRequested
-    // handlers in MainWindow.cpp. (PR #4537 review.)
+    // Live RX is muted while something plays audio back through the same sink:
+    // the QSO recorder, the PUDU monitor, or a voice keyer preview. The Flex
+    // path achieves that by disconnecting PanadapterStream::pcmFrameReady; a
+    // seam backend has no such connection to drop, so its relay consults this
+    // instead. (PR #4537 review.)
     bool m_rxMutedForPlayback{false};
+    // Who is asking; see RxPlaybackMuteOwners.h. A plain bool would let
+    // whichever producer finished first unmute under the others.
+    RxPlaybackMuteOwners m_rxPlaybackMuters;
+    void setRxPlaybackMute(const QString& owner, bool mute);   // MainWindow.cpp
     void wirePanStreamTxSink();               // MainWindow_Session.cpp
     void wireTxAudioAuthority();              // MainWindow_Session.cpp
     QMetaObject::Connection m_tciPcmConnection;
@@ -695,6 +725,7 @@ private:
     void applyGraphicEqToClientEq(bool transmit);
     void wireExternalControllers(); // MainWindow_Controllers.cpp
     void setupCtr2Proxy();          // MainWindow_Controllers.cpp
+    void showCtr2Window();          // MainWindow_Controllers.cpp
     void wireKiwiSdr();             // MainWindow_KiwiSdr.cpp
     void refreshKiwiSdrAppletReceivers();
     void refreshKiwiSdrSlices();
@@ -743,8 +774,8 @@ private:
     SliceModel* flexRxPanSourceSlice() const;
     void syncFlexRxPanToAudioEngine();
     void syncActiveSliceSquelchLineToSpectrums();
-    // RadioCapabilities::squelchLevelScale for the active slice's mode, pushed to
-    // every SpectrumWidget and to RxApplet's Auto availability.
+    SliceModel* squelchSliceForPan(const QString& panId) const;
+    // The RX control uses the active slice's mode; each pan uses its own slice.
     std::optional<SquelchLevelScale> activeSliceSquelchScale() const;
     void syncSquelchScaleToUi();
     bool autoSquelchShouldRunOnSpectrum(const QString& panId,
@@ -1067,6 +1098,14 @@ private:
     void showFreeDvReporter();
 #endif
     void updateKeyerAvailability();
+    // Client-side voice keyer (MainWindow_DigitalModes.cpp).
+    void wireLocalVoiceKeyer();
+    VoiceKeyerSource voiceKeyerSource() const;
+    void applyVoiceKeyerSource();
+    void showVoiceKeyerSourceMenu(const QPoint& globalPos);
+    // Where to pop the chooser when it is opened from the keyboard: under the
+    // DVK indicator when that is on screen, otherwise the window's centre.
+    QPoint voiceKeyerSourceMenuAnchor() const;
     void showNr2ParamPopup(const QPoint& globalPos);
     void showNr4ParamPopup(const QPoint& globalPos);
     void showDfnrParamPopup(const QPoint& globalPos);
@@ -1320,9 +1359,15 @@ private:
     LpMeterConnection m_lpMeterConn;    // TelePost LP-100A wattmeter, serial or ser2net
     SpeConnection     m_speConn;         // SPE Expert amplifier, serial or ser2net
     VkampConnection   m_vkampConn;       // VK3AMP amplifier, TCP control/status + UDP telemetry
+    Kat500Model      m_kat500Model;
+    Kxpa100Model      m_kxpa100Model;
+    class Kxpa100RadioAssociation* m_kxpa100Association = nullptr;
+    QPointer<class AtuPreTuneDialog> m_kat500PreTuneDialog;
+    Kpa500Connection  m_kpa500Conn;      // Elecraft KPA500 amplifier, serial or raw TCP
+    RfkitConnection   m_rfkitConn;       // RF-KIT amplifier, REST/JSON over HTTP (default port 8080)
     Kpa1500Connection m_kpa1500Conn;     // Elecraft KPA1500 amplifier, TCP control/status on port 1500 (#4097)
     BandPlanManager*  m_bandPlanMgr{nullptr};
-#ifdef HAVE_DEEPFIST
+#ifdef HAVE_CW_RX_BACKENDS
     void selectCwRxBackend(const QString& backend);
     void cwRxModelAction();
     void refreshCwRxStatus();
@@ -1434,8 +1479,7 @@ private:
     QHash<QString, std::shared_ptr<AetherSDR::SpectrogramBuffer>> m_spectrogramBuffers;
     AetherSDR::SignalClassifier m_signalClassifier;
 
-    // Batched spot add commands (flushed 1/sec)
-    QStringList m_spotCmdBatch;
+    // Passive spot identity and expiry.
     int m_nextPassiveSpotId{-2000000};
     QHash<int, qint64> m_passiveSpotExpiryMs;
     // N1MM spot identity: N1MMSpotParser::spotKey(dxcall, freq) -> passive
@@ -1488,6 +1532,26 @@ private:
     int     m_hidSensitivity{1};    // RC-28 pulses required per frequency step (1 = off)
     bool    m_hidAutoSnap{false};   // snap to nearest 1 kHz after rotation stops
     QTimer* m_hidSnapTimer{nullptr};
+    // Touch tap-and-hold -> synthesized right-click / context menu. On a
+    // touchscreen Qt synthesizes a LEFT click from a tap; a press held in place
+    // long enough is turned into a right-click here, so press-and-hold acts like
+    // the right mouse button (context menus) with no physical mouse. Driven from
+    // the qApp eventFilter watching Qt's synthesized mouse events.
+    QTimer*           m_touchHoldTimer{nullptr};
+    QPoint            m_touchHoldGlobalPos;
+    QPointer<QWidget> m_touchHoldWidget;
+    bool              m_touchHoldSwallowRelease{false};  // a fired hold owns the click
+    // Contour shuttle ring (#5928): the ring only reports when it moves, so
+    // this timer integrates the held position into steps while deflected.
+    QTimer*               m_shuttleTimer{nullptr};
+    QElapsedTimer         m_shuttleClock;
+    ShuttleRateIntegrator m_shuttleRate;
+    QString               m_shuttleAction;          // cached per deflection
+    double                m_shuttleSpeed{1.0};      // cached per deflection
+    bool                  m_shuttleLockNotified{false};
+    void onShuttleChanged(int position);
+    void onShuttleTick();
+    void stopShuttle();
     enum class TMate2Overlay { None, Volume, Power, Speed, Wpm, Rit, Xit, Shift, Agc, Apf, Text };
     TMate2Overlay m_tmate2Overlay{TMate2Overlay::None};
     int     m_tmate2OverlayValue{0};
@@ -1528,6 +1592,8 @@ private:
     // See applyAmpTxMeters() and kRelayMeterFreshnessMs.
     QElapsedTimer m_ampRelayTxStamp;
     void applyAmpTxMeters(float watts, float swr, bool fromRelay);
+    SharedTxMeterSelection sharedTxMeterSelection();
+    SharedTxMeterSource m_sharedTxMeterSource{SharedTxMeterSource::Radio};
 #ifdef Q_OS_LINUX
     EvdevEncoderManager*       m_dialBackend{nullptr};
 #elif defined(Q_OS_WIN) && defined(HAVE_HIDAPI)
@@ -1579,6 +1645,7 @@ private:
     WorkspaceController* m_workspaceController{nullptr};
     QAction*             m_workspaceCanvasAction{nullptr};
     quint64              m_canvasPanLayoutGeneration{0};
+    quint64              m_panLayoutRequestGeneration{0};
     QString              m_pendingCanvasPanLayoutId;
     int                  m_pendingCanvasPanLayoutTarget{-1};
     // Additional canvas windows (phase 7), keyed by surface id.  A hidden
@@ -1697,11 +1764,12 @@ private:
 #endif
     QPointer<PskReporterMapDialog> m_pskReporterMapDialog;
     QPointer<GpsLocationDialog> m_gpsLocationDialog;
+    QPointer<MultiFlexDialog> m_multiFlexDialog;
     QPointer<FlexControlDialog> m_flexControlDialog;
     QPointer<WhatsNewDialog> m_whatsNewDialog;
     QPointer<CanonWindow> m_aboutWindow;
     QPointer<AetherRxDialog> m_rxDialog;
-    QPointer<QDialog> m_nr2WisdomDialog;
+    QPointer<Nr2WisdomDialog> m_nr2WisdomDialog;
     // The running NR2 wisdom worker and its cancel flag, so shutdown can stop
     // it before AudioEngine teardown needs the FFTW planner lock (#6287).
     QPointer<QThread> m_nr2WisdomThread;
@@ -1780,6 +1848,11 @@ private:
 #endif
     CwxPanel* m_cwxPanel{nullptr};
     DvkPanel* m_dvkPanel{nullptr};
+    // RFC #4214 client-side voice keyer: recordings on this computer, driven
+    // through the same DVK panel as the radio DVK. The controller owns the
+    // keyer, its transmit route and the preview player; this window only
+    // follows the keyer it resolves. See wireLocalVoiceKeyer().
+    VoiceKeyerController* m_voiceKeyer{nullptr};
     QLabel* m_dvkIndicator{nullptr};
     QLabel* m_fdxIndicator{nullptr};
     QMetaObject::Connection m_tnfIndicatorConnection;
@@ -1807,7 +1880,7 @@ private:
     void applyFirmwareCurrencyToVersionLabel();
     // The version row's StatusIndicator action: opens the release notes of the
     // radio's own line while the firmware is out of date, otherwise nothing.
-    void openFirmwareReleaseNotes();
+    void openFirmwareUpdate();
     QLabel* m_stationLabel{nullptr};
     QLabel* m_stationNickLabel{nullptr};
     QLabel* m_automationChip{nullptr};    // shown only under AETHER_AUTOMATION (#3646)
@@ -1827,6 +1900,7 @@ private:
     QWidget* m_paStack{nullptr};
     QLabel*  m_paSeparator{nullptr};
     QLabel* m_networkLabel{nullptr};
+    QWidget* m_networkStatusBlock{nullptr};
     QTimer m_networkTooltipRefreshTimer;
     QTimer m_perfHeartbeatTimer;
     // GPS/station-location status-bar button and the separator that follows it.
@@ -1852,6 +1926,10 @@ private:
     // Active slice tracking for multi-slice support
     int m_activeSliceId{-1};
     bool m_splitActive{false};
+    quint64 m_splitCreateTicket{0};
+    quint64 m_splitCreateRevision{0};
+    CreatedSliceReceipt m_splitCreatedSlice;
+    QPointer<SliceModel> m_splitRxIdentity;
     int  m_splitRxSliceId{-1};
     int  m_splitTxSliceId{-1};
     double m_splitRxFrequencyMhz{0.0};
@@ -2101,15 +2179,21 @@ private:
     // the Aetherial strip's compressor settings, which share the object).
     bool m_lastAppliedProcEnable{false};
     int  m_lastAppliedProcLevel{-1};
-    // True once a Flex-shaped voice control has actually written into the shared
-    // ClientEq/ClientComp, so those objects hold OUR layout rather than the
-    // Aetherial strip's. Both directions need it (core/HostVoiceChainPolicy.h):
-    // the connect-time re-push must not put EqualizerModel's all-zero
-    // construction default over the strip's PERSISTED bands, and the family-swap
-    // unwind must not disable a Flex operator's own strip settings on a session
-    // that never went near a host-modulating backend.
+    // True once a Flex-shaped voice control has written into the shared
+    // ClientEq/ClientComp in this process, so they hold OUR layout. Gates the
+    // connect-time re-push and the family-swap unwind
+    // (core/HostVoiceChainPolicy.h), so neither touches an untouched strip.
     bool m_hostVoiceChainOwned{false};
-    bool m_minimalMode{false};             // true when spectrum is hidden (#208)
+    // True while a graphic EQ restored from settings waits for its first
+    // host-modulating connect. It licenses the re-push only; a Flex connect
+    // clears it, because the radio then writes the model.
+    bool m_restoredGraphicEqPending{false};
+    // True from a Flex connect until the saved graphic EQ is loaded back into
+    // the model on a host-modulating connect; nothing is saved meanwhile.
+    bool m_graphicEqFromRadio{false};
+    // Set while that reload runs, so it writes nothing into ClientEq itself.
+    bool m_graphicEqReloading{false};
+    bool m_minimalMode{false};            // true when spectrum is hidden (#208)
     bool m_canvasWasOnBeforeMinimal{false}; // minimal exit restores canvas mode
     bool m_exitingMinimalMode{false};      // re-entry guard for changeEvent → toggleMinimalMode(false)
     bool m_enteringMinimalMode{false};     // suppress changeEvent during enter (macOS deferred WindowStateChange, #2365)
@@ -2123,9 +2207,18 @@ private:
     QString m_panadapterConnectionAnimationLabel;
     ShortcutManager m_shortcutManager;
     UpdateChecker* m_updateChecker{nullptr};
+    // Install update in place (RFC #5304): outlives the Updates window, so
+    // a staged release installs on quit (closeEvent).
+    UpdateController* m_updateController{nullptr};
+    // applyUiScale() starts a new instance before quitting: the swap would
+    // find the install in use, so a staged update waits for the next quit.
+    bool m_relaunchingApp{false};
+    QPointer<UpdatesWindow> m_updatesWindow;
+    QAction* m_autoUpdateAction{nullptr};
 
 // CTR2 TCP proxy prototype (MainWindow_Controllers.cpp); never persisted, off at launch
     Ctr2ProxyModel* m_ctr2ProxyModel{nullptr};
+    QPointer<FirmwareInstallDialog> m_ctr2Window;
 
 // AetherClock (MainWindow_AetherClock.cpp)
     AetherClockEngine* m_clockEngine{nullptr};
@@ -2151,6 +2244,9 @@ private:
     quint64 m_radeEooRequestId{0};
     std::shared_ptr<std::atomic<bool>> m_radeFallbackReleaseFence;
     bool m_radeTxActive{false};
+    // RADE's hold on the radio's `transmit dax` flag where nothing else
+    // drives it from the slice mode (Windows, Linux without PipeWire).
+    void syncRadeTransmitDax(bool radeOwnsTx);
     void activateRADE(int sliceId);
     void deactivateRADE();
     void onRadeSliceModeChanged(const QString& mode);

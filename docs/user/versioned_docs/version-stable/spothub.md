@@ -24,6 +24,8 @@ All spot sources run on a worker thread, and spots are forwarded to the radio in
 
 Open SpotHub from **Settings → SpotHub...**
 
+The window has no title bar. Drag any empty part of it to move it, and drag an edge or corner to resize it; it reopens at the size and place you left it. Close it with the round **✕** in the top-right corner, **Esc** or **Ctrl+W** (**⌘W** on macOS). It's a window of its own, with its own taskbar entry, so you can minimize it from the taskbar or park it on another monitor. **View → Frameless Window** does not apply to it.
+
 SpotHub has ten tabs: **Cluster**, **RBN**, **WSJT-X**, **SpotCollector**, **POTA**, **EiBi**, **N1MM**, **FreeDV**, **Spot List** and **Display**. The FreeDV tab is only present in builds with Qt WebSockets.
 
 Every source tab has an **Auto-Start** (or **Auto-Connect**) toggle that starts it when the radio connects, a **Start / Stop** (or **Connect**) button, a status line and a console. Each console has a **Clear** button, which clears the console and deletes its stored log.
@@ -51,6 +53,11 @@ Skimmer spots from the Reverse Beacon Network, over the same telnet protocol.
 - **Callsign** — falls back to the cluster callsign when empty
 - **Rate Limit** — maximum spots per second sent to the radio (default 10), so contests don't flood the display. Extra spots are queued for the next batch.
 - **Startup Commands…**, **Auto-Connect**, **Hide Unverified**, **RBN Console** and **Spot Color** (default blue) as on the Cluster tab
+
+Queued radio-bound spots belong to the current connection. Disconnecting or
+pressing **Clear All** discards the older queue, so it cannot refill the radio's
+spot list after a clear or carry into a replacement session. New arrivals can
+populate the list again.
 
 ### WSJT-X (decode spotter)
 

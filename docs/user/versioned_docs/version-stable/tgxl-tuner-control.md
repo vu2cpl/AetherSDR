@@ -16,9 +16,9 @@ using with an indicator at the end of its readout row:
 
 | Indicator | Path |
 |---|---|
-| `● DIRECT` | A direct TCP connection to the tuner on port 9010 |
-| `● RADIO` | Through the FlexRadio, which relays the tuner's status and commands |
-| `● OFFLINE` | Neither is available |
+| `● DIRECT` | A direct TCP connection to the tuner on port 9010 (green) |
+| `● RADIO` | Through the FlexRadio, which relays the tuner's status and commands (yellow) |
+| `● OFFLINE` | Neither is available (orange) |
 
 When a TGXL is connected to your FlexRadio, the radio reports its address and
 AetherSDR opens the direct connection automatically. For a tuner the radio
@@ -51,8 +51,9 @@ Docked in the applet panel, the TUN applet (title "TGXL") shows:
 
 *The TGXL applet with a Tuner Genius XL connected.*
 
-- **Fwd Power** gauge. It scales for barefoot, Aurora or PGXL power levels,
-  and uses the tuner's own peak reading, so voice peaks read correctly.
+- **Fwd Power** gauge. It scales for barefoot (0–200 W), Aurora or a KPA500 in
+  operate (0–600 W) and PGXL (0–2000 W) power levels, and uses the tuner's own
+  peak reading, so voice peaks read correctly.
 - **SWR** gauge (1.0–3.0).
 - **C1**, **L** and **C2** relay bars.
 - **TUNE**: starts an auto-tune. While a tune runs it reads **STOP**;
