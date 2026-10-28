@@ -116,9 +116,11 @@ QList<RadioTabEntry> MainWindow::connectionProfileTabs() const
         RadioTabEntry entry;
         entry.id = kProfileTabPrefix + p.id;
         entry.name = p.name;
-        entry.model = p.radioLabel;
+        // Line two reads "Connected · SmartLink": the name already says which
+        // radio, so the model would only crowd out the route.
         entry.detail = routeText(p);
-        entry.transport = routeText(p);
+        entry.transport = p.radioLabel.isEmpty() ? routeText(p)
+                                                  : p.radioLabel + QStringLiteral(" · ") + routeText(p);
         entry.status = p.id == live ? RadioTabStatus::Connected : RadioTabStatus::Available;
         tabs.append(entry);
     }
