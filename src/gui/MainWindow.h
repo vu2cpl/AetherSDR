@@ -1795,6 +1795,8 @@ private:
 
     // Menus
     QMenu*           m_profilesMenu{nullptr};
+    QAction*         m_connectionProfilesAct{nullptr};   // always visible
+    QAction*         m_profilesListSeparator{nullptr};   // global-profile list follows
     QAction*         m_txBandAction{nullptr};
     QMenu*           m_tuneInhibitMenu{nullptr};  // Flex rear-panel TX outputs — dimmed off-Flex (#5263)
     // Settings ▸ "Autostart DAX with AetherSDR". Held so

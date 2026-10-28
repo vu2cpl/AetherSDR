@@ -8019,11 +8019,13 @@ void MainWindow::applyCapabilitiesToUi(bool connected, const RadioCapabilities& 
         m_appletPanel->setProfilesVisible(profiles);
     }
     if (m_profilesMenu) {
-        // Hide the whole menu, not just its two dialog entries: the rest of it
-        // is the radio's global-profile list, which on a radio without profiles
-        // is permanently empty. A "Profiles" menu containing nothing but two
-        // dialogs that can only report emptiness is worse than no menu.
-        m_profilesMenu->menuAction()->setVisible(profiles);
+        // The menu itself stays: Connection Profiles works for every family.
+        // Hide everything after its separator — the two radio-profile dialogs
+        // and the global-profile list, which on a radio without profiles can
+        // only ever report emptiness.
+        const auto actions = m_profilesMenu->actions();
+        for (qsizetype i = actions.indexOf(m_connectionProfilesAct) + 1; i < actions.size(); ++i)
+            actions[i]->setVisible(profiles);
     }
     // Close a dialog already open when the capability goes away — leaving the
     // Profile Manager on screen listing a store the connected radio does not
