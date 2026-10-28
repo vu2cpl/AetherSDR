@@ -265,10 +265,7 @@ ConnectionProfile ConnectionProfilesDialog::editorProfile() const
     ConnectionProfile p;
     if (const ConnectionProfile* existing = m_profiles.find(m_editingId))
         p = *existing;
-    else if (m_context.current.serial == m_serial->text().trimmed())
-        p.radioLabel = m_context.current.radioLabel;
-    if (!m_pickedRadioLabel.isEmpty())
-        p.radioLabel = m_pickedRadioLabel;
+    const QString previousFamily = p.family;
     p.id = m_editingId;
     p.name = m_name->text().trimmed();
     p.route = currentRoute();
@@ -280,7 +277,21 @@ ConnectionProfile ConnectionProfilesDialog::editorProfile() const
     p.frequencyMhz = m_frequency->value();
     p.mode = m_mode->currentText().trimmed();
     p.rfPower = m_power->value();
-    if (p.radioLabel.isEmpty())
+
+    // The label is line two of the tab, so it must name the radio this profile
+    // reaches, not whichever radio was live when the editor opened.
+    const ConnectionProfile& cur = m_context.current;
+    const bool isCurrentRadio = p.family.compare(cur.family, Qt::CaseInsensitive) == 0
+        && ((!p.serial.isEmpty() && p.serial == cur.serial)
+            || (!p.address.isEmpty() && p.address == cur.address));
+    if (!m_pickedRadioLabel.isEmpty())
+        p.radioLabel = m_pickedRadioLabel;
+    else if (isCurrentRadio && !cur.radioLabel.isEmpty())
+        p.radioLabel = cur.radioLabel;
+    else if (p.radioLabel.isEmpty() || previousFamily.compare(p.family, Qt::CaseInsensitive) != 0
+             // Repairs a non-Flex profile saved with the live Flex's label.
+             || (p.family != QLatin1String("flex")
+                 && p.radioLabel.startsWith(QLatin1String("FLEX"), Qt::CaseInsensitive)))
         p.radioLabel = m_family->currentText();
     return p;
 }
