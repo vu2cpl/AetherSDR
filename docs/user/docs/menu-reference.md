@@ -50,7 +50,8 @@ Items that depend on optional build features (MQTT, MIDI, serial controllers) on
 
 | Item | What it does |
 |------|-------------|
-| **Profile Manager...** | The main profile dialog. |
+| **Connection Profiles...** | Save radios, routes and settings as one-click title-bar profiles; shown for every radio. See [Connection Profiles](./connection-profiles.md). |
+| **Profile Manager...** | The main profile dialog. FlexRadio only. |
 | **Import/Export Profiles...** | SmartSDR-compatible `.ssdr_cfg` import and export. |
 | *(profile names)* | Below the separator, the radio's global profiles; pick one to load it. |
 

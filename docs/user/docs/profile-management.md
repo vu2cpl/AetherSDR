@@ -18,7 +18,7 @@ AetherSDR's own preferences (layout, display, controllers) are separate and stay
 
 ## Requirements
 
-- A FlexRadio must be connected. The Profiles menu, Profile Manager and PROF applet are hidden when another kind of radio is connected.
+- A FlexRadio must be connected. When another kind of radio is connected, the Profiles menu shows only **Connection Profiles...**, and the Profile Manager and PROF applet are hidden.
 - Import and export also need a direct LAN connection (not SmartLink), and are not available while transmitting (MOX, TUNE, PTT).
 
 ## Profile types
@@ -43,6 +43,7 @@ CW settings, kept as named profiles on radios running SmartSDR v4.3.16 or later.
 
 **Profiles** in the menu bar:
 
+- **Connection Profiles...**: save radios, routes and settings for one-click switching in the title bar (see [Connection Profiles](./connection-profiles.md))
 - **Profile Manager...**: open the management dialog
 - **Import/Export Profiles...**: back up or restore the radio's profile database as a SmartSDR `.ssdr_cfg` package
 - the list of global profiles: click one to load it; the check mark follows the radio's active global profile
@@ -127,11 +128,11 @@ Profile operations are carried out by the radio with these commands:
 
 ## Troubleshooting
 
-### The Profiles menu or PROF applet is missing
+### The Profile Manager or PROF applet is missing
 
-Profiles are a FlexRadio feature, and they are hidden when another kind of radio is connected.
+Radio profiles are a FlexRadio feature, and they are hidden when another kind of radio is connected. The Profiles menu then shows only **Connection Profiles...**.
 
-1. Connect to a FlexRadio. The menu and applet appear.
+1. Connect to a FlexRadio. The Profile Manager, Import/Export and applet appear.
 
 ### Import/Export Profiles is unavailable
 
