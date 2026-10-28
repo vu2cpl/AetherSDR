@@ -65,6 +65,7 @@ const sidebars = {
         "tnf-tracking-notch-filters",
         "memory-channels",
         "profile-management",
+        "connection-profiles",
         "xvtr-transverters",
         "workspace-canvas"
       ]
