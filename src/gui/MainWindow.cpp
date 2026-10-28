@@ -1494,6 +1494,7 @@ MainWindow::MainWindow(QWidget* parent)
     // Discovery + heartbeat + SmartLink wiring → wireDiscovery()
     // (MainWindow_Session.cpp, #3351 Phase 2c).
     wireDiscovery();
+    wireConnectionProfiles();
 
     // Spot subsystem wiring (DX cluster / spot clients worker thread /
     // HF propagation / dedup+batch forwarding) → wireSpotSubsystem()

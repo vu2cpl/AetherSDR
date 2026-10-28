@@ -1145,6 +1145,10 @@ void MainWindow::buildMenuBar()
     connect(profileMgrAct, &QAction::triggered, this, [this] {
         showOrRaisePersistent(m_profileManagerDialog, &m_radioModel);
     });
+    auto* connectionProfilesAct = m_profilesMenu->addAction(tr("Connection Profiles..."));
+    connectionProfilesAct->setObjectName(QStringLiteral("connectionProfilesAction"));
+    connect(connectionProfilesAct, &QAction::triggered,
+            this, &MainWindow::showConnectionProfilesDialog);
     auto* profileImportExportAct = m_profilesMenu->addAction("Import/Export Profiles...");
     connect(profileImportExportAct, &QAction::triggered, this, [this] {
         showOrRaisePersistent(m_profileImportExportDialog, &m_radioModel);

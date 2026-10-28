@@ -174,6 +174,14 @@ target_link_libraries(cw_pcm_consumer_test PRIVATE aethercore Qt6::Core)
 add_test(NAME cw_pcm_consumer_test COMMAND cw_pcm_consumer_test)
 set_tests_properties(cw_pcm_consumer_test PROPERTIES TIMEOUT 60)
 
+# Title-bar connection profiles: encoding, session match, click decision.
+add_executable(connection_profiles_test tests/connection_profiles_test.cpp
+               src/core/ConnectionProfiles.cpp)
+target_include_directories(connection_profiles_test PRIVATE src)
+target_link_libraries(connection_profiles_test PRIVATE Qt6::Core)
+add_test(NAME connection_profiles_test COMMAND connection_profiles_test)
+set_tests_properties(connection_profiles_test PROPERTIES TIMEOUT 30)
+
 add_executable(rtty_decoder_pcm_test tests/rtty_decoder_pcm_test.cpp)
 target_link_libraries(rtty_decoder_pcm_test PRIVATE aethercore Qt6::Core)
 add_test(NAME rtty_decoder_pcm_test COMMAND rtty_decoder_pcm_test)
