@@ -5,6 +5,10 @@
 
 #include <QStringList>
 
+#include <optional>
+
+class QFormLayout;
+
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
@@ -45,6 +49,8 @@ private:
     void rebuildList(const QString& selectId = QString());
     void loadEditor(const ConnectionProfile& profile);
     ConnectionProfile editorProfile() const;
+    ConnectionProfile::Route currentRoute() const;
+    void rebuildRoutes(std::optional<ConnectionProfile::Route> prefer = std::nullopt);
     void updateRouteFields();
     void setStatus(const QString& text, bool error = false);
 
@@ -54,6 +60,7 @@ private:
     QString m_pickedRadioLabel;   // from the Radio list, until the next load
 
     QListWidget*    m_list{nullptr};
+    QFormLayout*    m_form{nullptr};
     QComboBox*      m_radioPick{nullptr};
     QLineEdit*      m_name{nullptr};
     QComboBox*      m_route{nullptr};

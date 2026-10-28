@@ -77,31 +77,24 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
     m_name->setPlaceholderText(tr("e.g. MSHV, JTDX-VU"));
     form->addRow(tr("Name"), m_name);
 
-    m_radioPick = new QComboBox(bodyWidget());
-    m_radioPick->setObjectName(QStringLiteral("connectionProfileRadio"));
-    m_radioPick->setAccessibleName(tr("Radio"));
-    m_radioPick->addItem(m_context.knownRadios.isEmpty()
-                             ? tr("No radios found — fill in below")
-                             : tr("Choose a radio…"));
-    for (const ConnectionProfile& r : std::as_const(m_context.knownRadios)) {
-        const QString where = r.route == ConnectionProfile::Route::SmartLink
-            ? tr("SmartLink") : (r.address.isEmpty() ? tr("LAN") : r.address);
-        m_radioPick->addItem(QStringLiteral("%1 — %2").arg(r.name, where));
-    }
-    form->addRow(tr("Radio"), m_radioPick);
-
-    m_route = new QComboBox(bodyWidget());
-    for (auto r : {ConnectionProfile::Route::Lan, ConnectionProfile::Route::Ip,
-                   ConnectionProfile::Route::SmartLink})
-        m_route->addItem(routeLabel(r), connectionRouteToken(r));
-    form->addRow(tr("Connect via"), m_route);
-
+    // Type first: it decides which routes exist, and the route decides which
+    // radios the list offers.
     m_family = new QComboBox(bodyWidget());
+    m_family->setObjectName(QStringLiteral("connectionProfileFamily"));
     m_family->addItem(QStringLiteral("FlexRadio"), QStringLiteral("flex"));
     m_family->addItem(QStringLiteral("Icom"), QStringLiteral("icom"));
     m_family->addItem(QStringLiteral("Hermes-Lite 2"), QStringLiteral("hl2"));
     m_family->addItem(QStringLiteral("ANAN"), QStringLiteral("anan"));
     form->addRow(tr("Radio type"), m_family);
+
+    m_route = new QComboBox(bodyWidget());
+    m_route->setObjectName(QStringLiteral("connectionProfileRoute"));
+    form->addRow(tr("Connect via"), m_route);
+
+    m_radioPick = new QComboBox(bodyWidget());
+    m_radioPick->setObjectName(QStringLiteral("connectionProfileRadio"));
+    m_radioPick->setAccessibleName(tr("Radio"));
+    form->addRow(tr("Radio"), m_radioPick);
 
     m_serial = new QLineEdit(bodyWidget());
     m_serial->setPlaceholderText(tr("filled in when you choose a radio"));
@@ -109,6 +102,7 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
     m_address = new QLineEdit(bodyWidget());
     m_address->setPlaceholderText(QStringLiteral("192.168.1.148"));
     form->addRow(tr("Address"), m_address);
+    m_form = form;
 
     auto* applyHeader = new QLabel(tr("After connecting (blank = leave as is)"), bodyWidget());
     applyHeader->setStyleSheet(QStringLiteral("font-weight: bold; margin-top: 8px;"));
@@ -158,19 +152,20 @@ ConnectionProfilesDialog::ConnectionProfilesDialog(const ConnectionProfileSet& p
         "QPushButton:disabled { color: {{color.text.secondary}}; }"
         "QPushButton:focus, QLineEdit:focus { border: 1px solid {{color.border.accent}}; }"));
 
+    connect(m_family, &QComboBox::currentIndexChanged, this, [this] { rebuildRoutes(); });
     connect(m_route, &QComboBox::currentIndexChanged, this, &ConnectionProfilesDialog::updateRouteFields);
     connect(m_radioPick, &QComboBox::activated, this, [this](int index) {
-        if (index <= 0 || index > m_context.knownRadios.size())
+        const QVariant data = m_radioPick->itemData(index);
+        const int known = data.isValid() ? data.toInt() : -1;
+        if (known < 0 || known >= m_context.knownRadios.size())
             return;
-        const ConnectionProfile& r = m_context.knownRadios.at(index - 1);
-        m_route->setCurrentIndex(std::max(0, m_route->findData(connectionRouteToken(r.route))));
-        m_family->setCurrentIndex(std::max(0, m_family->findData(r.family)));
-        m_serial->setText(r.serial);
+        const ConnectionProfile& r = m_context.knownRadios.at(known);
+        const bool ip = currentRoute() == ConnectionProfile::Route::Ip;
+        m_serial->setText(ip ? QString() : r.serial);
         m_address->setText(r.address);
         m_pickedRadioLabel = r.radioLabel;
         if (m_name->text().trimmed().isEmpty())
             m_name->setText(r.name);
-        updateRouteFields();
     });
     connect(m_list, &QListWidget::currentRowChanged, this, [this](int row) {
         if (row >= 0 && row < m_profiles.profiles().size())
@@ -248,10 +243,12 @@ void ConnectionProfilesDialog::loadEditor(const ConnectionProfile& p)
 {
     m_editingId = p.id;
     m_pickedRadioLabel.clear();
-    m_radioPick->setCurrentIndex(0);
     m_name->setText(p.name);
-    m_route->setCurrentIndex(std::max(0, m_route->findData(connectionRouteToken(p.route))));
-    m_family->setCurrentIndex(std::max(0, m_family->findData(p.family)));
+    {
+        const QSignalBlocker blocker(m_family);
+        m_family->setCurrentIndex(std::max(0, m_family->findData(p.family)));
+    }
+    rebuildRoutes(p.route);
     m_serial->setText(p.serial);
     m_address->setText(p.address);
     m_flexGlobal->setCurrentText(p.flexGlobalProfile);
@@ -261,7 +258,6 @@ void ConnectionProfilesDialog::loadEditor(const ConnectionProfile& p)
     m_power->setValue(p.rfPower);
     m_delete->setEnabled(!p.id.isEmpty() && m_profiles.find(p.id));
     setStatus(QString());
-    updateRouteFields();
 }
 
 ConnectionProfile ConnectionProfilesDialog::editorProfile() const
@@ -275,7 +271,7 @@ ConnectionProfile ConnectionProfilesDialog::editorProfile() const
         p.radioLabel = m_pickedRadioLabel;
     p.id = m_editingId;
     p.name = m_name->text().trimmed();
-    p.route = connectionRouteFromToken(m_route->currentData().toString());
+    p.route = currentRoute();
     p.family = m_family->currentData().toString();
     p.serial = m_serial->text().trimmed();
     p.address = m_address->text().trimmed();
@@ -289,15 +285,57 @@ ConnectionProfile ConnectionProfilesDialog::editorProfile() const
     return p;
 }
 
+ConnectionProfile::Route ConnectionProfilesDialog::currentRoute() const
+{
+    return connectionRouteFromToken(m_route->currentData().toString());
+}
+
+void ConnectionProfilesDialog::rebuildRoutes(std::optional<ConnectionProfile::Route> prefer)
+{
+    const auto keep = prefer.value_or(currentRoute());
+    const auto routes = connectionRoutesForFamily(m_family->currentData().toString());
+    {
+        const QSignalBlocker blocker(m_route);
+        m_route->clear();
+        for (auto r : routes)
+            m_route->addItem(routeLabel(r), connectionRouteToken(r));
+        m_route->setCurrentIndex(std::max(0, m_route->findData(connectionRouteToken(keep))));
+    }
+    m_route->setEnabled(routes.size() > 1);
+    updateRouteFields();
+}
+
 void ConnectionProfilesDialog::updateRouteFields()
 {
-    const auto route = connectionRouteFromToken(m_route->currentData().toString());
-    // SmartLink only reaches Flex radios.
-    if (route == ConnectionProfile::Route::SmartLink)
-        m_family->setCurrentIndex(std::max(0, m_family->findData(QStringLiteral("flex"))));
-    m_family->setEnabled(route != ConnectionProfile::Route::SmartLink);
-    m_serial->setEnabled(route != ConnectionProfile::Route::Ip);
-    m_address->setEnabled(route != ConnectionProfile::Route::SmartLink);
+    const auto route = currentRoute();
+    m_form->setRowVisible(m_serial, route != ConnectionProfile::Route::Ip);
+    m_form->setRowVisible(m_address, route != ConnectionProfile::Route::SmartLink);
+
+    // Offer only radios of this type that this route can reach: SmartLink
+    // rows for SmartLink, discovered rows for LAN, any addressed radio for IP.
+    const QString family = m_family->currentData().toString();
+    const QSignalBlocker blocker(m_radioPick);
+    m_radioPick->clear();
+    m_radioPick->addItem(QString(), -1);
+    for (int i = 0; i < m_context.knownRadios.size(); ++i) {
+        const ConnectionProfile& r = m_context.knownRadios.at(i);
+        if (r.family.compare(family, Qt::CaseInsensitive) != 0)
+            continue;
+        const bool fits = route == ConnectionProfile::Route::SmartLink
+            ? r.route == ConnectionProfile::Route::SmartLink
+            : route == ConnectionProfile::Route::Lan
+                ? r.route == ConnectionProfile::Route::Lan
+                : r.route != ConnectionProfile::Route::SmartLink && !r.address.isEmpty();
+        if (!fits)
+            continue;
+        const QString where = r.route == ConnectionProfile::Route::SmartLink
+            ? tr("SmartLink") : (r.address.isEmpty() ? tr("LAN") : r.address);
+        m_radioPick->addItem(QStringLiteral("%1 — %2").arg(r.name, where), i);
+    }
+    m_radioPick->setItemText(0, m_radioPick->count() > 1 ? tr("Choose a radio…")
+        : route == ConnectionProfile::Route::SmartLink ? tr("None — log in to SmartLink first")
+        : tr("None found — enter the address below"));
+    m_radioPick->setCurrentIndex(0);
 }
 
 void ConnectionProfilesDialog::setStatus(const QString& text, bool error)

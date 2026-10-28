@@ -17,6 +17,17 @@ QString connectionRouteToken(ConnectionProfile::Route route)
     return QStringLiteral("lan");
 }
 
+QList<ConnectionProfile::Route> connectionRoutesForFamily(const QString& family)
+{
+    using Route = ConnectionProfile::Route;
+    const QString f = family.trimmed().toLower();
+    if (f == QLatin1String("flex") || f.isEmpty())
+        return {Route::Lan, Route::Ip, Route::SmartLink};
+    if (f == QLatin1String("icom"))
+        return {Route::Ip};
+    return {Route::Lan, Route::Ip};
+}
+
 ConnectionProfile::Route connectionRouteFromToken(const QString& token)
 {
     const QString t = token.trimmed().toLower();
