@@ -53,6 +53,9 @@ constexpr int  kDotTextGap    = 8;
 constexpr int  kAddButtonSize = 28;
 constexpr int  kStripSpacing  = 6;
 constexpr int  kStripMinWidth = 112;
+// Narrowest a tab shrinks to before the strip scrolls instead: the dot plus a
+// few elided characters of name and status.
+constexpr int  kTabMinWidth   = 76;
 constexpr qreal kNameSizePx   = 12.5;
 constexpr qreal kStatusSizePx = 9.5;
 // A heartbeat swells the dot's glow and lets it fall away over this long.  The
@@ -598,6 +601,9 @@ RadioTabBar::RadioTabBar(QWidget* parent)
 
 bool RadioTabBar::eventFilter(QObject* watched, QEvent* ev)
 {
+    if (m_scrollArea && watched == m_scrollArea->viewport() && ev->type() == QEvent::Resize) {
+        updateTabViewport();
+    }
     if (watched == m_addButton
         && (ev->type() == QEvent::FocusIn || ev->type() == QEvent::FocusOut)) {
         bool visible = false;
@@ -801,6 +807,7 @@ void RadioTabBar::updateTabViewport(RadioTab* ensureVisible)
     if (!m_tabHost || !m_tabsLayout || !m_scrollArea) {
         return;
     }
+    fitTabsToWidth();
     m_tabHost->setFixedWidth(qMax(0, m_tabsLayout->sizeHint().width()));
     updateGeometry();
     if (ensureVisible) {
@@ -810,6 +817,33 @@ void RadioTabBar::updateTabViewport(RadioTab* ensureVisible)
                 m_scrollArea->ensureWidgetVisible(target, kStripSpacing, 0);
             }
         });
+    }
+}
+
+void RadioTabBar::fitTabsToWidth()
+{
+    // More tabs than room: shrink them evenly (each paints its name and status
+    // elided) down to kTabMinWidth, and only then let the strip scroll. A tab's
+    // own sizeHint() stays its natural width, so this is recomputed from
+    // scratch whenever the tabs or the room change.
+    QList<RadioTab*> visible;
+    int natural = 0;
+    for (RadioTab* tab : std::as_const(m_tabs)) {
+        if (tab->isHidden())
+            continue;
+        visible.append(tab);
+        natural += tab->sizeHint().width();
+    }
+    if (visible.isEmpty())
+        return;
+    const int gaps = kStripSpacing * int(visible.size() - 1);
+    const int room = m_scrollArea->viewport()->width();
+    const int cap = natural + gaps <= room
+        ? QWIDGETSIZE_MAX
+        : qMax(kTabMinWidth, (room - gaps) / int(visible.size()));
+    for (RadioTab* tab : std::as_const(visible)) {
+        if (tab->maximumWidth() != cap)
+            tab->setMaximumWidth(cap);
     }
 }
 

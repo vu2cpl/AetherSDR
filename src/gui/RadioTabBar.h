@@ -194,6 +194,7 @@ private:
     void refreshOpenPopover();   // rebuild an open popover from m_discovered
     QString   linkRadioId() const;   // the radio the heartbeat describes
     void updateTabViewport(RadioTab* ensureVisible = nullptr);
+    void fitTabsToWidth();   // shrink tabs evenly when they outgrow the strip
     // Push the current link state (override colour, alarm phase, glow level)
     // onto the tabs — the active one carries it, the rest stay neutral.
     void applyLinkVisuals();

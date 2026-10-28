@@ -19,11 +19,12 @@ Connection profiles work with every radio family. They are stored on your comput
 1. Choose **Profiles → Connection Profiles...**. On macOS the menu is in the menu bar at the top of the screen.
 2. Click **New from current connection** to start from the radio you are connected to, or **New** to start blank.
 3. Type a **Name**.
-4. Pick the radio from the **Radio** list. It lists radios found on your network, radios in your SmartLink list and a radio you are connected to by IP. Picking one fills in **Connect via**, **Radio type**, **Serial** and **Address**.
-5. Under **After connecting**, fill in only what the profile should change. Blank fields are left as they are:
+4. Choose the **Radio type**, then how to **Connect via**. The choices follow the type: a FlexRadio offers LAN, IP address and SmartLink; an Icom offers IP address only; a Hermes-Lite 2 or ANAN offers LAN and IP address.
+5. Pick the radio from the **Radio** list. It shows only radios of that type that the route can reach: radios found on your network, radios in your SmartLink list, or a radio you are connected to by IP. Picking one fills in the **Serial** and **Address**.
+6. Under **After connecting**, fill in only what the profile should change. Blank fields are left as they are:
    - **Flex Global profile** and **Flex TX profile**: loaded on a FlexRadio, Global first
    - **Frequency**, **Mode** and **RF power**: set on the active slice of any radio
-6. Click **Save**.
+7. Click **Save**.
 
 | Connect via | Needs | Notes |
 |-------------|-------|-------|
@@ -42,6 +43,8 @@ Once you have saved one profile, the radio tabs in the title bar show your profi
 The connected tab is the profile you connected with. If you connected some other way, it is the first profile whose radio and route match the session: a LAN profile and a SmartLink profile for the same radio are different profiles.
 
 To go back to plain radio tabs, delete all your connection profiles.
+
+The SmartLink list holds every radio registered to your SmartLink account, so it can include radios that aren't on your network.
 
 ## Troubleshooting
 

@@ -41,6 +41,9 @@ struct ConnectionProfile {
 };
 
 QString connectionRouteToken(ConnectionProfile::Route route);
+// The routes a radio family can be reached by, in the order offered: SmartLink
+// is a FlexRadio service, and an Icom is never discovered, only addressed.
+QList<ConnectionProfile::Route> connectionRoutesForFamily(const QString& family);
 ConnectionProfile::Route connectionRouteFromToken(const QString& token);
 
 // What identifies the session that is live right now, for matching a profile.

@@ -159,6 +159,17 @@ void sessionMatch()
     check(!set.matchSession(i), "nothing matches when disconnected");
 }
 
+void routesPerFamily()
+{
+    using Route = ConnectionProfile::Route;
+    check(connectionRoutesForFamily(QStringLiteral("flex"))
+              == QList<Route>({Route::Lan, Route::Ip, Route::SmartLink}), "Flex offers LAN, IP, SmartLink");
+    check(connectionRoutesForFamily(QStringLiteral("icom")) == QList<Route>({Route::Ip}),
+          "Icom offers IP only");
+    check(!connectionRoutesForFamily(QStringLiteral("hl2")).contains(Route::SmartLink),
+          "SmartLink is Flex-only");
+}
+
 void clickDecision()
 {
     check(decideProfileClick(false, QString(), QStringLiteral("a")) == ProfileClickAction::Connect,
@@ -178,6 +189,7 @@ int main()
     loadValidation();
     sessionMatch();
     clickDecision();
+    routesPerFamily();
     std::printf("connection profiles: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
