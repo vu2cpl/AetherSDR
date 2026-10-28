@@ -32,6 +32,9 @@ struct ConnectionProfile {
     int     rfPower{-1};         // 0-100
 
     bool appliesSettings() const;
+    // Enough to reach a radio: SmartLink needs the serial, IP the address,
+    // LAN either (serial when discovered, address otherwise).
+    bool isReachable() const;
 
     QJsonObject toJson() const;
     static ConnectionProfile fromJson(const QJsonObject& obj);

@@ -294,6 +294,38 @@ void MainWindow::showConnectionProfilesDialog()
         if (SliceModel* slice = activeSlice())
             context.modes = slice->modeList();
     }
+    for (const RadioInfo& info : m_connPanel->automationLocalRadios()) {
+        ConnectionProfile r;
+        r.route = ConnectionProfile::Route::Lan;
+        r.family = info.family.isEmpty() ? QStringLiteral("flex") : info.family.toLower();
+        r.serial = info.serial;
+        r.address = info.address.isNull() ? QString() : info.address.toString();
+        r.radioLabel = info.model.isEmpty() ? info.name : info.model;
+        r.name = info.nickname.isEmpty() ? r.radioLabel : info.nickname;
+        if (r.isReachable())
+            context.knownRadios.append(r);
+    }
+    for (const WanRadioInfo& wan : std::as_const(m_smartLinkRadios)) {
+        ConnectionProfile r;
+        r.route = ConnectionProfile::Route::SmartLink;
+        r.serial = wan.serial;
+        r.radioLabel = wan.model;
+        r.name = wan.nickname.isEmpty() ? wan.model : wan.nickname;
+        if (r.isReachable())
+            context.knownRadios.append(r);
+    }
+    // A radio reached by IP (Icom, a routed Flex) is never discovered; offer
+    // the live one so it can be picked too.
+    if (session.connected && !session.wan && !session.address.isEmpty()) {
+        bool listed = false;
+        for (const ConnectionProfile& r : std::as_const(context.knownRadios))
+            listed = listed || r.address == session.address;
+        if (!listed) {
+            ConnectionProfile r = context.current;
+            r.route = ConnectionProfile::Route::Ip;
+            context.knownRadios.append(r);
+        }
+    }
     if (context.modes.isEmpty()) {
         context.modes = {QStringLiteral("USB"), QStringLiteral("LSB"), QStringLiteral("CW"),
                          QStringLiteral("DIGU"), QStringLiteral("DIGL"), QStringLiteral("AM"),

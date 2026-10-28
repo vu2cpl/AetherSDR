@@ -98,6 +98,15 @@ void loadValidation()
     good.name.clear();
     list.append(good.toJson());
     list.append(good.toJson());   // duplicate id
+    ConnectionProfile lanByAddress = flexLan();
+    lanByAddress.id = QStringLiteral("a");
+    lanByAddress.serial.clear();
+    list.append(lanByAddress.toJson());
+    ConnectionProfile smartlinkNoSerial = flexLan();
+    smartlinkNoSerial.id = QStringLiteral("s");
+    smartlinkNoSerial.route = ConnectionProfile::Route::SmartLink;
+    smartlinkNoSerial.serial.clear();
+    list.append(smartlinkNoSerial.toJson());
     QJsonObject wild = icomIp().toJson();
     wild[QStringLiteral("id")] = QStringLiteral("w");
     wild[QStringLiteral("route")] = QStringLiteral("carrier-pigeon");
@@ -109,7 +118,9 @@ void loadValidation()
 
     const ConnectionProfileSet set =
         ConnectionProfileSet::fromJson(QJsonObject{{QStringLiteral("profiles"), list}});
-    check(set.profiles().size() == 2, "id-less, unreachable and duplicate profiles are dropped");
+    check(set.profiles().size() == 3, "id-less, unreachable and duplicate profiles are dropped");
+    check(set.find(QStringLiteral("a")) != nullptr, "a LAN profile with only an address is kept");
+    check(!set.find(QStringLiteral("s")), "a SmartLink profile without a serial is dropped");
     check(set.find(QStringLiteral("g")) && set.find(QStringLiteral("g"))->name == QStringLiteral("FLEX-6600"),
           "a nameless profile is named after its radio");
     const ConnectionProfile* w = set.find(QStringLiteral("w"));
