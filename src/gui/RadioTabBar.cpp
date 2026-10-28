@@ -704,7 +704,20 @@ bool RadioTabBar::handleStripDrag(QObject* watched, QEvent* ev)
 
 QSize RadioTabBar::sizeHint() const
 {
-    const int tabsWidth = m_tabsLayout ? m_tabsLayout->sizeHint().width() : 0;
+    // Ask for the tabs' NATURAL width, not the shrunk layout's: the title bar
+    // hands the strip at most what it asks for, so reporting the capped width
+    // would pin the tabs at their minimum even with the bar half empty.
+    // fitTabsToWidth() shrinks them only when the room actually given is less.
+    int tabsWidth = 0;
+    int shown = 0;
+    for (RadioTab* tab : std::as_const(m_tabs)) {
+        if (tab->isHidden())
+            continue;
+        tabsWidth += tab->sizeHint().width();
+        ++shown;
+    }
+    if (shown > 1)
+        tabsWidth += kStripSpacing * (shown - 1);
     const int addWidth = m_addButton && m_addButton->isVisible()
         ? kStripSpacing + kAddButtonSize : 0;
     return QSize(tabsWidth + addWidth, kTabHeight);
