@@ -23,6 +23,7 @@ const sidebars = {
         "your-first-session",
         "installation",
         "first-connection",
+        "station-profiles",
         "before-you-transmit"
       ]
     },
@@ -33,6 +34,7 @@ const sidebars = {
         "supported-radios",
         "flexradio",
         "radio-health-tools",
+        "wspr-receiver",
         "hermes-lite-2",
         "networked-icom",
         "anan-g2",
@@ -66,7 +68,6 @@ const sidebars = {
         "tnf-tracking-notch-filters",
         "memory-channels",
         "profile-management",
-        "connection-profiles",
         "xvtr-transverters",
         "workspace-canvas",
         "aetherlab"
