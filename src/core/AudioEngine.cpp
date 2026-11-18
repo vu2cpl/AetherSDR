@@ -9798,7 +9798,7 @@ void AudioEngine::onTxAudioReady()
     // Radio-authoritative mode/passband filtering remains downstream.
     m_txVoiceProcessor->setStageOrder(
         m_txChainPacked.load(std::memory_order_acquire));
-    m_txVoiceProcessor->setMicGain(m_pcMicGain.load());
+    m_txVoiceProcessor->setMicGain(m_pcMicGain.load() * m_pcMicBoost.load());
     m_txVoiceProcessor->setRnnoiseEnabled(m_rn2TxEnabled.load());
     // Both routes return the same transport Int16 in `data`, so every tap,
     // monitor, meter and the Opus encoder below are untouched by this branch.

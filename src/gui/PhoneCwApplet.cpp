@@ -393,6 +393,35 @@ void PhoneCwApplet::buildPhonePanel()
         m_micLevelLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         row->addWidget(m_micLevelLabel);
 
+        // PC mic boost. The slider above tops out at unity, which leaves a
+        // quiet capture device (a Bluetooth hands-free headset delivers speech
+        // some 20 dB under full scale) with no way up. The boost is applied
+        // client-side ahead of the final limiter and only on the Flex PC voice
+        // path; syncPhoneFromModel() dims it everywhere else.
+        m_micBoostCombo = new GuardedComboBox;
+        m_micBoostCombo->setFixedWidth(46);
+        m_micBoostCombo->setFixedHeight(22);
+        m_micBoostCombo->setAccessibleName("PC microphone boost");
+        m_micBoostCombo->setAccessibleDescription(
+            "Extra gain in decibels for the PC microphone, applied before the final limiter");
+        m_micBoostCombo->setToolTip(
+            "PC mic boost (dB). For quiet devices such as Bluetooth headsets. "
+            "Applied before the final limiter.");
+        AetherSDR::applyComboStyle(m_micBoostCombo);
+        for (int db : {0, 6, 12, 18, 24})
+            m_micBoostCombo->addItem(QStringLiteral("+%1").arg(db), db);
+        {
+            const int saved = AppSettings::instance().value("PcMicBoostDb", 0).toInt();
+            const int idx = m_micBoostCombo->findData(saved);
+            m_micBoostCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+        }
+        connect(m_micBoostCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this, [this](int idx) {
+            if (idx >= 0)
+                emit micBoostChanged(m_micBoostCombo->itemData(idx).toInt());
+        });
+        row->addWidget(m_micBoostCombo);
+
         m_accBtn = new QPushButton("+ACC");
         m_accBtn->setCheckable(true);
         m_accBtn->setFixedHeight(22);
@@ -1317,6 +1346,12 @@ void PhoneCwApplet::syncPhoneFromModel()
         m_radeActive
         || (m_selectableMicInputs
             && m_model->micSelection() == QLatin1String("PC"));
+    // Boost reaches only the Flex PC voice path (RADE keeps unity-capped gain).
+    if (m_micBoostCombo) {
+        m_micBoostCombo->setEnabled(
+            !m_radeActive && m_selectableMicInputs
+            && m_model->micSelection() == QLatin1String("PC"));
+    }
     const QSignalBlocker micLevelBlocker(m_micLevelSlider);
     if (clientOwnsGain) {
         int pcGain = AppSettings::instance().value("PcMicGain", 100).toInt();

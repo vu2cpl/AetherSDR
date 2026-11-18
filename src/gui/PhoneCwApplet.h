@@ -75,6 +75,9 @@ public:
 
 signals:
     void micLevelChanged(int level);  // slider value 0-100
+    // Client-side PC mic boost in dB (0, 6, 12, 18, 24). Operator moves only;
+    // MainWindow persists it as "PcMicBoostDb" and hands it to AudioEngine.
+    void micBoostChanged(int db);
 
     // Local CW sidetone — generated client-side by AudioEngine, independent
     // of the radio's DAX-fed sidetone.  MainWindow connects these to the
@@ -160,6 +163,7 @@ private:
     QSlider*     m_micLevelSlider{nullptr};
     QLabel*      m_micLevelLabel{nullptr};
     QPushButton* m_accBtn{nullptr};
+    QComboBox*   m_micBoostCombo{nullptr};
 
     QPushButton* m_procBtn{nullptr};
     QSlider*     m_procSlider{nullptr};   // capability-shaped: presets or 0..maximum

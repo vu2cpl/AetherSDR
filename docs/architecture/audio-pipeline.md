@@ -513,8 +513,12 @@ After capture channel canonicalization, `onTxAudioReady()` uses this ordering:
 6. **Voice DSP strip**: `TxVoiceProcessor::processChannelStrip()` runs float32
    processors directly in the user-selected order. The default order is Gate,
    EQ, DeEss, Comp, Tube, PUDU, Reverb.
-7. **PC mic gain**: `setPcMicGain(0..100)` maps to `0.0..1.0` and attenuates the
-   48 kHz float samples. It is not a boost stage.
+7. **PC mic gain and boost**: `setPcMicGain(0..100)` maps to `0.0..1.0` and
+   attenuates the 48 kHz float samples. `setPcMicBoostDb(0..24)` (setting
+   `PcMicBoostDb`, the `+dB` combo beside the mic slider) multiplies a boost
+   onto it for quiet capture devices such as Bluetooth hands-free headsets.
+   The product is capped at +24 dB in `TxVoiceProcessor::setMicGain()`; the
+   final limiter below holds the boosted peaks. RADE does not use the boost.
 8. **Quindar tone**: `ClientQuindarTone::process()` inserts Quindar tones at
    48 kHz after PC mic gain and before the final limiter.
 9. **Final limiter**: `ClientFinalLimiter::process()` runs at 48 kHz after all

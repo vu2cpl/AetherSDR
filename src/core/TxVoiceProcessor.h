@@ -93,6 +93,10 @@ public:
     // then keeps the object alive, so a racing acquire load that still sees
     // the old pointer dereferences a live filter rather than freed memory.
     void setRnnoise(RNNoiseFilter* rnnoise) noexcept;
+    // Linear PC mic gain. 0..1 attenuates; above 1 is the operator's PC mic
+    // boost (capped at kMaxMicGain, +24 dB). Applied after the channel strip
+    // and before the final limiter, which is what holds the boosted peaks.
+    static constexpr float kMaxMicGain = 15.8489f;
     void setMicGain(float gain) noexcept;
     void setMeasurementCaptureEnabled(bool enabled) noexcept;
 

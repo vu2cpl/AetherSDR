@@ -1537,6 +1537,16 @@ void MainWindow::wireRadioModel()
     // via TransmitModel::setMicLevel, and applying both would double it. Uses
     // hostModulatesTxAudio() (`hostModulates && canTransmit`), the canonical
     // form (QsoRecordStartPolicy.h).
+    // PC mic boost: client-side, persisted, independent of mic_selection (the
+    // voice processor it feeds only ever sees local PC mic capture).
+    m_audio->setPcMicBoostDb(AppSettings::instance().value("PcMicBoostDb", 0).toInt());
+    connect(m_appletPanel->phoneCwApplet(), &PhoneCwApplet::micBoostChanged,
+            this, [this](int db) {
+        m_audio->setPcMicBoostDb(db);
+        auto& s = AppSettings::instance();
+        s.setValue("PcMicBoostDb", db);
+        s.save();
+    });
     connect(m_appletPanel->phoneCwApplet(), &PhoneCwApplet::micLevelChanged,
             this, [this](int level) {
         if (hostModulatesTxAudio())

@@ -556,6 +556,42 @@ void test48kBypassAndMeasurementBoundaries()
                && duplicatedStereo(transportOutput, false));
 }
 
+void testMicGainBoostsAboveUnityAndIsCapped()
+{
+    // A quiet capture device needs gain above unity; the cap keeps a bad
+    // caller from asking for more than +24 dB.
+    auto peakFor = [](float gain) {
+        TxVoiceProcessor processor;
+        processor.prepare(48000, 1024);
+        processor.setMicGain(gain);
+        float peak = 0.0f;
+        for (int block = 0; block < 20; ++block) {
+            QByteArray tone = makeCanonicalTone(480, 48000, 1000.0f);
+            auto* s = reinterpret_cast<int16_t*>(tone.data());
+            const int n = tone.size() / static_cast<int>(sizeof(int16_t));
+            for (int i = 0; i < n; ++i)
+                s[i] = static_cast<int16_t>(s[i] / 64);
+            processor.processCapturedInt16(tone);
+            const QByteArray& out = processor.transportFloat32Stereo();
+            const auto* f = reinterpret_cast<const float*>(out.constData());
+            const int fn = out.size() / static_cast<int>(sizeof(float));
+            if (block >= 10)
+                for (int i = 0; i < fn; ++i)
+                    peak = std::max(peak, std::abs(f[i]));
+        }
+        return peak;
+    };
+    const float unity = peakFor(1.0f);
+    const float boosted = peakFor(4.0f);
+    const float capped = peakFor(1000.0f);
+    const float ratioDb = 20.0f * std::log10(boosted / unity);
+    const float capDb = 20.0f * std::log10(capped / unity);
+    report("mic gain above unity boosts the voice path",
+           std::abs(ratioDb - 12.04f) < 0.2f, std::to_string(ratioDb));
+    report("mic gain is capped at +24 dB",
+           std::abs(capDb - 24.0f) < 0.3f, std::to_string(capDb));
+}
+
 void testDeviceRateNormalization()
 {
     TxVoiceProcessor processor;
@@ -1184,6 +1220,7 @@ int main()
     testResamplerResetRestoresFreshState();
     testStereoEgressMismatchSalvagesAndRealigns();
     test48kBypassAndMeasurementBoundaries();
+    testMicGainBoostsAboveUnityAndIsCapped();
     testDeviceRateNormalization();
     testFloat48OfflineEntryAvoidsInputQuantization();
     testCapturedFloat32EntryAvoidsInputQuantization();

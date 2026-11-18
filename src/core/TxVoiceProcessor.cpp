@@ -196,7 +196,7 @@ void TxVoiceProcessor::setRnnoise(RNNoiseFilter* rnnoise) noexcept
 
 void TxVoiceProcessor::setMicGain(float gain) noexcept
 {
-    m_micGain = std::isfinite(gain) ? std::clamp(gain, 0.0f, 1.0f) : 1.0f;
+    m_micGain = std::isfinite(gain) ? std::clamp(gain, 0.0f, kMaxMicGain) : 1.0f;
 }
 
 void TxVoiceProcessor::setMeasurementCaptureEnabled(bool enabled) noexcept
@@ -327,7 +327,7 @@ bool TxVoiceProcessor::processWorkBuffer(int frames48,
     }
 
     work = reinterpret_cast<float*>(m_work48.data());
-    if (m_micGain < 0.999f) {
+    if (m_micGain < 0.999f || m_micGain > 1.001f) {
         for (int sample = 0; sample < frames48 * kChannels; ++sample) {
             work[sample] *= m_micGain;
         }
